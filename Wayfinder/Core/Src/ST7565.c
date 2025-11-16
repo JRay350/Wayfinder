@@ -431,36 +431,33 @@ void ST7565_clear(void) {
 }
 
 
-void pin_config()
+void pin_config(void)
 {
-	// check for this portion first if lcd is not working becuase the initializations are here for control pins
-	
-//++++++++++++++++++++++++++
-	GPIO_InitTypeDef GPIO_InitStruct = {0};
-	__HAL_RCC_GPIOD_CLK_ENABLE();
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_9, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_10, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_8, GPIO_PIN_RESET);
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-	/*Configure GPIO pin : PD8 */
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
+    // Enable clock for the port you selected (cog_port)
+    // NOTE: cannot infer port from macro, so user must enable clock manually
+    // or you can add a switch here (optional)
 
-	/*Configure GPIO pin : PD9 */
-	GPIO_InitStruct.Pin = GPIO_PIN_10;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
+    __HAL_RCC_GPIOB_CLK_ENABLE();
 
-	/*Configure GPIO pin : PD10 */
-	GPIO_InitStruct.Pin = GPIO_PIN_8;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
+    // Set all control pins LOW initially
+    HAL_GPIO_WritePin(cog_port, cog_CS,  GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(cog_port, cog_RS,  GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_RESET);
 
+    // Configure CS pin
+    GPIO_InitStruct.Pin = cog_CS;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
+
+    // Configure RS (A0 / D-C) pin
+    GPIO_InitStruct.Pin = cog_RS;
+    HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
+
+    // Configure RST pin
+    GPIO_InitStruct.Pin = cog_RST;
+    HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
 }
