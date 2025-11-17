@@ -38,6 +38,7 @@ extern "C" {
 
 #include "c6dofimu13_hal.h"
 #include "lps22hh_platform.h"
+#include "stts22h_platform.h"
 #include "ST7565.h"
 /* USER CODE END Includes */
 

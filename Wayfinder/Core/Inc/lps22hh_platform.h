@@ -12,8 +12,8 @@
 extern "C" {
 #endif
 
-#include "stm32l0xx_hal.h"   // or your MCU series header
-#include "lps22hh.h"         // ST driver header
+#include <stm32l0xx_hal.h>   // or your MCU series header
+#include <lps22hh.h>         // ST driver header
 
 #define LPS22HH_SPI_HANDLE     hspi1     // <-- change to SPI2 or SPI3 if needed
 
@@ -40,4 +40,4 @@ void    LPS22HH_Delay(uint32_t ms);
 }
 #endif
 
-#endif // LPS22HH_PLATFORM_H
+#endif /* INC_LPS22HH_PLATFORM_H_ */

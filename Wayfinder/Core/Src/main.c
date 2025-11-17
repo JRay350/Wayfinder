@@ -52,8 +52,8 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 C6DOFIMU13_HandleTypeDef h6dof;
+
 LPS22HH_Object_t lps22hh;
-LPS22HH_IO_t lps22hh_io;
 STTS22H_Object_t stts22h;
 /* USER CODE END PV */
 
@@ -227,13 +227,20 @@ int main(void)
       Print_Error(lps22hh_status);
   }
 
-  /*
   // STTS22H Init
-  const float stts22h_odr = 1.0;
-  STTS22H_Init(&stts22h);
-  STTS22H_TEMP_Enable(&stts22h);
-  STTS22H_TEMP_SetOutputDataRate(&stts22h, stts22h_odr);
-	*/
+  const float_t stts22h_odr = 1.0f;
+  int32_t stts22h_status = STTS22H_OK;
+
+  do {
+      if ((stts22h_status = STTS22H_BusIO_Register_I2C(&stts22h)) != STTS22H_OK) break;
+      if ((stts22h_status = STTS22H_Init(&stts22h)) != STTS22H_OK) break;
+      if ((stts22h_status = STTS22H_TEMP_Enable(&stts22h)) != STTS22H_OK) break;
+      if ((stts22h_status = STTS22H_TEMP_SetOutputDataRate(&stts22h, stts22h_odr)) != STTS22H_OK) break;
+  } while (0);
+
+  if (stts22h_status != STTS22H_OK) {
+      Print_Error(stts22h_status);
+  }
 
   /* USER CODE END 2 */
 
