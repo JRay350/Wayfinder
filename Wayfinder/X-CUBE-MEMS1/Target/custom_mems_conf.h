@@ -40,11 +40,6 @@ extern "C" {
 #define CUSTOM_LPS22HH_0_CS_PORT GPIOC
 #define CUSTOM_LPS22HH_0_CS_PIN GPIO_PIN_8
 
-#define CUSTOM_STTS22H_0_I2C_Init BSP_I2C2_Init
-#define CUSTOM_STTS22H_0_I2C_DeInit BSP_I2C2_DeInit
-#define CUSTOM_STTS22H_0_I2C_ReadReg BSP_I2C2_ReadReg
-#define CUSTOM_STTS22H_0_I2C_WriteReg BSP_I2C2_WriteReg
-
 #ifdef __cplusplus
 }
 #endif
