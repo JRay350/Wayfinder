@@ -291,24 +291,22 @@ void ST7565_fillcircle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t color)
 
 
 // Update the physical display with the contents of the display buffer
-void updateDisplay()
+void updateDisplay(void)
 {
-	ST7565_command(CMD_SET_ADC_NORMAL);
-	ST7565_command(CMD_SET_COM_NORMAL);
-    ST7565_command(CMD_SET_DISP_START_LINE);
-  for (uint8_t page = 0; page < LCD_HEIGHT / 8; page++) {
-    // Set the page address
-    ST7565_command(CMD_SET_PAGE | page);
+    // Assume ADC/COM already set in init and left alone
 
-    for (uint8_t column = 0; column < LCD_WIDTH; column++) {
-      // Set the column address
-      ST7565_command(CMD_SET_COLUMN_UPPER | (column >> 4));
-      ST7565_command(CMD_SET_COLUMN_LOWER | (column & 0x0F));
+    for (uint8_t page = 0; page < LCD_HEIGHT / 8; page++) {
+        ST7565_command(CMD_SET_PAGE | page);
 
-      // Send the pixel data
-      ST7565_data(displayBuffer[page * LCD_WIDTH + column]);
+        // Start from column 0 each page
+        ST7565_command(CMD_SET_COLUMN_LOWER | 0x0);
+        ST7565_command(CMD_SET_COLUMN_UPPER | 0x0);
+
+        for (uint8_t column = 0; column < LCD_WIDTH; column++) {
+            uint8_t data = displayBuffer[page * LCD_WIDTH + column];
+            ST7565_data(data);
+        }
     }
-  }
 }
 
 void ST7565_setpixel(uint8_t x, uint8_t y, uint8_t color)
@@ -327,60 +325,57 @@ void ST7565_setpixel(uint8_t x, uint8_t y, uint8_t color)
 
 void ST7565_init(void)
 {
+    pin_config();                       // configure I/O pins
+    HAL_GPIO_WritePin(cog_port, cog_CS,  GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(cog_port, cog_RS,  GPIO_PIN_RESET);
 
-	pin_config();                       // configure I/O pins
-	HAL_GPIO_WritePin(cog_port, cog_CS, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(cog_port, cog_RS, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_SET);
+    HAL_Delay(50);
+    HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_RESET);
+    HAL_Delay(50);
+    HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_SET);
 
-	HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_SET);
-	HAL_Delay(500);          // Software Reset Sequence
-	HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_RESET);
-	HAL_Delay(500);          // Software Reset Sequence
-	HAL_GPIO_WritePin(cog_port, cog_RST, GPIO_PIN_SET);
+    // LCD bias select
+    ST7565_command(CMD_SET_BIAS_7);
 
-	// LCD bias select
-	ST7565_command(CMD_SET_BIAS_7);
-	// ADC select
-	ST7565_command(CMD_SET_ADC_REVERSE);
-	// SHL select
-	ST7565_command(CMD_SET_COM_REVERSE);
-	// Initial display line
-	ST7565_command(CMD_SET_DISP_START_LINE);
+    // Orientation: choose one and keep it *everywhere*
+    ST7565_command(CMD_SET_ADC_REVERSE);   // X direction
+    ST7565_command(CMD_SET_COM_NORMAL);   // Y direction
 
-	// turn on voltage converter (VC=1, VR=0, VF=0)
-	ST7565_command(CMD_SET_POWER_CONTROL | 0x4);
-	// wait for 50% rising
-	HAL_Delay(50);          // Software Reset Sequence
+    // Initial display line
+    ST7565_command(CMD_SET_DISP_START_LINE);
 
-	// turn on voltage regulator (VC=1, VR=1, VF=0)
-	ST7565_command(CMD_SET_POWER_CONTROL | 0x6);
-	// wait >=50ms
-	HAL_Delay(50);          // Software Reset Sequence
+    // Power up sequence
+    ST7565_command(CMD_SET_POWER_CONTROL | 0x4);
+    HAL_Delay(50);
+    ST7565_command(CMD_SET_POWER_CONTROL | 0x6);
+    HAL_Delay(50);
+    ST7565_command(CMD_SET_POWER_CONTROL | 0x7);
+    HAL_Delay(10);
 
-	// turn on voltage follower (VC=1, VR=1, VF=1)
-	ST7565_command(CMD_SET_POWER_CONTROL | 0x7);
-	// wait
-	HAL_Delay(10);          // Software Reset Sequence
+    // Contrast / resistor ratio
+    ST7565_command(CMD_SET_RESISTOR_RATIO | 0x4);
 
-	// set lcd operating voltage (regulator resistor, ref voltage resistor)
-	ST7565_command(CMD_SET_RESISTOR_RATIO | 0x4);
+    // Turn display on, normal mode
+    ST7565_command(CMD_DISPLAY_ON);
+    ST7565_command(CMD_SET_ALLPTS_NORMAL);
 
+    ST7565_set_brightness(0x10); // not max; you can tweak
 
-	ST7565_command(CMD_DISPLAY_ON);
-	// ADC select
-	ST7565_command(CMD_SET_ALLPTS_NORMAL);
-	// SHL select
-	ST7565_command(CMD_SET_COM_REVERSE);
+    // Clear framebuffer
+    memset(displayBuffer, 0, sizeof(displayBuffer));
 
-
-	ST7565_set_brightness(0xff);
-
-
-	memset(displayBuffer, 0, sizeof(displayBuffer)); // for clearing the display buffer
-
-	ST7565_updateBoundingBox(0, 0, LCD_WIDTH-1, LCD_HEIGHT-1);
+    // Optionally: immediately push a blank screen
+    // so DDRAM matches framebuffer
+    for (uint8_t page = 0; page < LCD_HEIGHT/8; page++) {
+        ST7565_command(CMD_SET_PAGE | page);
+        ST7565_command(CMD_SET_COLUMN_LOWER | 0x0);
+        ST7565_command(CMD_SET_COLUMN_UPPER | 0x0);
+        for (uint8_t col = 0; col < LCD_WIDTH; col++) {
+            ST7565_data(0x00);
+        }
+    }
 }
-
 
 uint8_t ST7565_command(uint8_t c) {
 	uint8_t ret;
@@ -460,4 +455,12 @@ void pin_config(void)
     // Configure RST pin
     GPIO_InitStruct.Pin = cog_RST;
     HAL_GPIO_Init(cog_port, &GPIO_InitStruct);
+}
+
+uint8_t ST7565_on() {
+	return ST7565_command(CMD_DISPLAY_ON);
+}
+
+uint8_t ST7565_off() {
+	return ST7565_command(CMD_DISPLAY_OFF);
 }

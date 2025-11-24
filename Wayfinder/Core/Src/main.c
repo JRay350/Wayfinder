@@ -29,6 +29,7 @@ typedef enum {
 	PRESSURE,
 	TEMPERATURE
 } Sensor_Type;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -48,6 +49,7 @@ I2C_HandleTypeDef hi2c2;
 RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
 
@@ -56,6 +58,11 @@ C6DOFIMU13_HandleTypeDef h6dof;
 
 LPS22HH_Object_t lps22hh;
 STTS22H_Object_t stts22h;
+bool isDisplayOn;
+
+volatile bool rtc_tick_flag;
+volatile bool power_button_flag;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,6 +73,7 @@ static void MX_I2C1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void IMU_Init(void);
 void IMU_SendData(float accel_x, float accel_y, float accel_z, float mag_x, float mag_y, float mag_z);
@@ -208,6 +216,7 @@ int main(void)
   MX_RTC_Init();
   MX_SPI1_Init();
   MX_I2C2_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
   // MC6470 Init
@@ -245,36 +254,79 @@ int main(void)
       Print_Error(stts22h_status);
   }
 
+  // LCD Init
+  ST7565_init();
+  extern uint8_t displayBuffer[1024];
+  isDisplayOn = true;
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  	// MC6470 Readings
-	    float ax, ay, az;
-	    float mx, my, mz;
-	    if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
-	        C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK)
-	    {
-	        IMU_SendData(ax, ay, az, mx, my, mz);
-	    }
+	  char wayfinder_text[] = "WAYFINDER";
+      char pressure_string[32];
+      char temperature_string[32];
 
-	    // LPS22HHTR Readings
-	    float_t pressure;
-	    // Retrieve pressure in units of HPa
-	    if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
-	    	Send_Data(pressure, PRESSURE);
-	    }
+      if (power_button_flag) {
+          power_button_flag = 0;  // Clear flag
 
-	    // STTS22H Readings
-	    float temperature;
-	    // Retrieve temperature in units of degrees Celsius
-	    if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == HAL_OK) {
-	    	Send_Data(temperature, TEMPERATURE);
-	    }
+          uint8_t status = isDisplayOn ? ST7565_off() : ST7565_on();
+          if (status == HAL_OK)
+              isDisplayOn = !isDisplayOn;
+      }
 
-	    HAL_Delay(5000);
+      if (rtc_tick_flag) {
+          rtc_tick_flag = 0; // Clear flag
+
+          float ax, ay, az;
+          float mx, my, mz;
+
+          if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
+              C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK)
+          {
+              // IMU_SendData(ax, ay, az, mx, my, mz);
+          }
+
+          float_t pressure;
+          if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
+              snprintf(pressure_string, sizeof(pressure_string),
+                       "Pressure: %.2f HPa", pressure);
+          }
+
+          float temperature;
+          if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == HAL_OK) {
+              snprintf(temperature_string, sizeof(temperature_string),
+                       "Temperature: %.2f C", temperature);
+          }
+
+          /* ---- LCD UPDATE ---- */
+          memset(displayBuffer, 0, sizeof(displayBuffer));
+
+          ST7565_drawstring_anywhere(
+              (LCD_WIDTH / 2) - ((strlen(wayfinder_text) / 2) * 6),
+              49,
+              wayfinder_text
+          );
+
+          ST7565_drawstring_anywhere(
+              (LCD_WIDTH / 2) - ((strlen(pressure_string) / 2) * 6),
+              27,
+              pressure_string
+          );
+
+          ST7565_drawstring_anywhere(
+              (LCD_WIDTH / 2) - ((strlen(temperature_string) / 2) * 6),
+              6,
+              temperature_string
+          );
+
+          updateDisplay();
+      }
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -543,6 +595,44 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief SPI2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI2_Init(void)
+{
+
+  /* USER CODE BEGIN SPI2_Init 0 */
+
+  /* USER CODE END SPI2_Init 0 */
+
+  /* USER CODE BEGIN SPI2_Init 1 */
+
+  /* USER CODE END SPI2_Init 1 */
+  /* SPI2 parameter configuration*/
+  hspi2.Instance = SPI2;
+  hspi2.Init.Mode = SPI_MODE_MASTER;
+  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi2.Init.NSS = SPI_NSS_SOFT;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi2.Init.CRCPolynomial = 7;
+  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI2_Init 2 */
+
+  /* USER CODE END SPI2_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -603,6 +693,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : PA0 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PA4 */
   GPIO_InitStruct.Pin = GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -624,14 +720,44 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB3 PB8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
 void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc) {
-	Print_Date();
-	Print_Time();
+	rtc_tick_flag = true;
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if (GPIO_Pin == GPIO_PIN_0) { // PA0
+		power_button_flag = true;
+	}
 }
 
 /* USER CODE END 4 */

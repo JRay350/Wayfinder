@@ -79,9 +79,6 @@ extern SPI_HandleTypeDef hspi2;
 #define CMD_NOP  0xE3
 #define CMD_TEST  0xF0
 
-
-
-
   void ST7565_init(void);
   uint8_t ST7565_command(uint8_t c);
   uint8_t ST7565_data(uint8_t c);
@@ -101,3 +98,5 @@ extern SPI_HandleTypeDef hspi2;
   void pin_config();
   void ST7565_drawchar_anywhere(uint8_t x, uint8_t y, char c);
   void ST7565_drawstring_anywhere(uint8_t x, uint8_t y, const char* str);
+  uint8_t ST7565_off();
+  uint8_t ST7565_on();
