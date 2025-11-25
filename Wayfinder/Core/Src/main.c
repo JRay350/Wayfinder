@@ -30,6 +30,11 @@ typedef enum {
 	TEMPERATURE
 } Sensor_Type;
 
+typedef enum {
+	COMPASS,
+	SENSORS
+} Interface_State_t;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -63,6 +68,8 @@ bool isDisplayOn;
 volatile bool rtc_tick_flag;
 volatile bool power_button_flag;
 
+Interface_State_t interface_state = SENSORS;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -76,14 +83,8 @@ static void MX_I2C2_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void IMU_Init(void);
-void IMU_SendData(float accel_x, float accel_y, float accel_z, float mag_x, float mag_y, float mag_z);
 void Send_Data (float data, Sensor_Type sensor);
-// void Set_RTC_Time(void);
-// void Set_RTC_Date(void);
-void UART_Receive(uint8_t *data, uint16_t size);
-void Print_Error(int32_t error);
-void Print_Time(void);
-void Print_Date(void);
+void Draw_Compass(float heading_deg);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -102,84 +103,38 @@ static void IMU_Init(void) {
 	                        C6DOFIMU13_MAG_TEMP_MEAS_ON);
 }
 
-void IMU_SendData(float accel_x, float accel_y, float accel_z, float mag_x, float mag_y, float mag_z) {
-    char msg[128];
-
-    int len = snprintf(msg, sizeof(msg),
-                       "ACC: X=%.3f Y=%.3f Z=%.3f  |  MAG: X=%.3f Y=%.3f Z=%.3f\r\n",
-                       accel_x, accel_y, accel_z, mag_x, mag_y, mag_z);
-
-    if (len < 0) {
-        // snprintf error
-        return;
-    }
-
-    if (len > sizeof(msg)) {
-        // Truncated; clamp length
-        len = sizeof(msg);
-    }
-
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, (uint16_t)len, HAL_MAX_DELAY);
-}
-
-void Send_Data(float_t data, Sensor_Type sensor) {
-	char msg[128];
-
-	int len = (sensor == PRESSURE) ? snprintf(msg, sizeof(msg), "Pressure (HPa): %.3f\r\n", data) : snprintf(msg, sizeof(msg), "Temperature (C): %.3f\r\n", data);
-
-	if (len < 0) {
-		// snprintf error
-		return;
-	}
-
-	if (len > sizeof(msg)) {
-		// Truncated; clamp length
-		len = sizeof(msg);
-	}
-
-	HAL_UART_Transmit(&huart2, (uint8_t*)msg, (uint16_t)len, HAL_MAX_DELAY);
-}
-
-void UART_Receive(uint8_t *buffer, uint16_t size)
+void Draw_Compass(float heading_deg)
 {
-    // Ensure the buffer is null-terminated
-    HAL_UART_Receive(&huart2, buffer, size, HAL_MAX_DELAY);
-    buffer[size] = '\0';
+    const uint8_t cx = 64;
+    const uint8_t cy = 32;
+    const uint8_t r  = 20;
+
+
+    // Draw outer circle
+    ST7565_drawcircle(cx, cy, r, BLACK);
+
+    // Draw cardinal letters
+    ST7565_drawchar_anywhere(cx - 2, cy + r + 2, 'N');
+    ST7565_drawchar_anywhere(cx + r + 4, cy - 3, 'E');
+    ST7565_drawchar_anywhere(cx - 2, cy - r - 10, 'S');
+    ST7565_drawchar_anywhere(cx - r - 10, cy - 3, 'W');
+
+    float offset = 180.0;
+
+    // Convert heading to radians
+    float angle = (heading_deg + offset) * (3.14159265f / 180.0f);
+
+    // End point of needle
+    float fx = cx + r * sinf(angle);
+    float fy = cy - r * cosf(angle);   // y is inverted
+
+    uint8_t x1 = (uint8_t)(fx + 0.5f);
+    uint8_t y1 = (uint8_t)(fy + 0.5f);
+
+    // Draw needle
+    ST7565_drawline(cx, cy, x1, y1, BLACK, 2);
 }
 
-void Print_Error(int32_t error) {
-	char buffer[50];
-	sprintf(buffer, "There was an error: %ld", error);
-	HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
-}
-
-void Print_Time(void)
-{
-    RTC_TimeTypeDef sTime;
-    RTC_DateTypeDef sDate;  // dummy
-    char buffer[50];
-
-    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN); // must be after GetTime
-
-    sprintf(buffer, "Current Time: %02d:%02d:%02d\n\r",
-            sTime.Hours, sTime.Minutes, sTime.Seconds);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
-}
-
-void Print_Date(void)
-{
-    RTC_TimeTypeDef sTime;   // dummy
-    RTC_DateTypeDef sDate;
-    char buffer[50];
-
-    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN); // keep ordering consistent
-    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
-    sprintf(buffer, "Current Date: %02d-%02d-20%02d\n\r",
-            sDate.Date, sDate.Month, sDate.Year);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
-}
 /* USER CODE END 0 */
 
 /**
@@ -235,10 +190,6 @@ int main(void)
       if ((lps22hh_status = LPS22HH_PRESS_SetOutputDataRate(&lps22hh, lps22h_odr)) != LPS22HH_OK) break;
   } while (0);
 
-  if (lps22hh_status != LPS22HH_OK) {
-      Print_Error(lps22hh_status);
-  }
-
   // STTS22H Init
   const float_t stts22h_odr = 1.0f;
   int32_t stts22h_status = STTS22H_OK;
@@ -249,10 +200,6 @@ int main(void)
       if ((stts22h_status = STTS22H_TEMP_Enable(&stts22h)) != STTS22H_OK) break;
       if ((stts22h_status = STTS22H_TEMP_SetOutputDataRate(&stts22h, stts22h_odr)) != STTS22H_OK) break;
   } while (0);
-
-  if (stts22h_status != STTS22H_OK) {
-      Print_Error(stts22h_status);
-  }
 
   // LCD Init
   ST7565_init();
@@ -266,7 +213,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  char wayfinder_text[] = "WAYFINDER";
       char pressure_string[32];
       char temperature_string[32];
 
@@ -284,44 +230,44 @@ int main(void)
           float ax, ay, az;
           float mx, my, mz;
 
-          if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
-              C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK)
-          {
-              // IMU_SendData(ax, ay, az, mx, my, mz);
+          if (interface_state == SENSORS) {
+              float_t pressure;
+              if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
+                  snprintf(pressure_string, sizeof(pressure_string),
+                           "Pressure: %.2f HPa", pressure);
+              }
+
+              float temperature;
+              if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == HAL_OK) {
+                  snprintf(temperature_string, sizeof(temperature_string),
+                           "Temperature: %.2f C", temperature);
+              }
+
+              memset(displayBuffer, 0, sizeof(displayBuffer));
+
+              ST7565_drawstring_anywhere(
+                  (LCD_WIDTH / 2) - ((strlen(pressure_string) / 2) * 6),
+                  27,
+                  pressure_string
+              );
+
+              ST7565_drawstring_anywhere(
+                  (LCD_WIDTH / 2) - ((strlen(temperature_string) / 2) * 6),
+                  6,
+                  temperature_string
+              );
+          } else if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
+                  C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK && interface_state == COMPASS)
+              {
+            	    float heading_rad = atan2f(my, mx);             // angle in radians
+            	    float heading_deg = heading_rad * (180.0f / 3.14159265f);
+
+            	    if (heading_deg < 0) {
+            	        heading_deg += 360.0f;                      // normalize to 0–360
+            	    }
+            	  memset(displayBuffer, 0, sizeof(displayBuffer));
+            	  Draw_Compass(heading_deg);
           }
-
-          float_t pressure;
-          if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
-              snprintf(pressure_string, sizeof(pressure_string),
-                       "Pressure: %.2f HPa", pressure);
-          }
-
-          float temperature;
-          if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == HAL_OK) {
-              snprintf(temperature_string, sizeof(temperature_string),
-                       "Temperature: %.2f C", temperature);
-          }
-
-          /* ---- LCD UPDATE ---- */
-          memset(displayBuffer, 0, sizeof(displayBuffer));
-
-          ST7565_drawstring_anywhere(
-              (LCD_WIDTH / 2) - ((strlen(wayfinder_text) / 2) * 6),
-              49,
-              wayfinder_text
-          );
-
-          ST7565_drawstring_anywhere(
-              (LCD_WIDTH / 2) - ((strlen(pressure_string) / 2) * 6),
-              27,
-              pressure_string
-          );
-
-          ST7565_drawstring_anywhere(
-              (LCD_WIDTH / 2) - ((strlen(temperature_string) / 2) * 6),
-              6,
-              temperature_string
-          );
 
           updateDisplay();
       }
@@ -757,6 +703,8 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc) {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_0) { // PA0
 		power_button_flag = true;
+	} else if (GPIO_Pin == GPIO_PIN_9) { // PB9
+		interface_state = COMPASS;
 	}
 }
 
