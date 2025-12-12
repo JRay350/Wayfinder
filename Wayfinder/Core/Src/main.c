@@ -56,8 +56,6 @@ RTC_HandleTypeDef hrtc;
 SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
 
-UART_HandleTypeDef huart2;
-
 /* USER CODE BEGIN PV */
 C6DOFIMU13_HandleTypeDef h6dof;
 
@@ -75,7 +73,6 @@ Interface_State_t interface_state = SENSORS;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI1_Init(void);
@@ -83,8 +80,9 @@ static void MX_I2C2_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void IMU_Init(void);
-void Send_Data (float data, Sensor_Type sensor);
+// void Send_Data (float data);
 void Draw_Compass(float heading_deg);
+void ftoa(char* buf, float value, int decimals);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -103,36 +101,99 @@ static void IMU_Init(void) {
 	                        C6DOFIMU13_MAG_TEMP_MEAS_ON);
 }
 
+/* void Send_Data(float data) {
+    RTC_TimeTypeDef sTime;
+    RTC_DateTypeDef sDate;
+
+    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+    char time_buf[10];
+    char data_buf[20];
+    char out_buf[40];
+
+    ftoa(time_buf, (float)sTime.Seconds, 0);
+    ftoa(data_buf, data, 2);
+
+    strcpy(out_buf, time_buf);
+    strcat(out_buf, ",");
+    strcat(out_buf, data_buf);
+    strcat(out_buf, "\r\n");
+
+    HAL_UART_Transmit(&huart2, (uint8_t*)out_buf, strlen(out_buf), HAL_MAX_DELAY);
+}*/
+
 void Draw_Compass(float heading_deg)
 {
     const uint8_t cx = 64;
     const uint8_t cy = 32;
     const uint8_t r  = 20;
 
-
     // Draw outer circle
     ST7565_drawcircle(cx, cy, r, BLACK);
 
-    // Draw cardinal letters
-    ST7565_drawchar_anywhere(cx - 2, cy + r + 2, 'N');
-    ST7565_drawchar_anywhere(cx + r + 4, cy - 3, 'E');
-    ST7565_drawchar_anywhere(cx - 2, cy - r - 10, 'S');
-    ST7565_drawchar_anywhere(cx - r - 10, cy - 3, 'W');
+    // Draw cardinal letters in normal positions
+    ST7565_drawchar_anywhere(cx - 2, cy - r - 10, 'N');  // top
+    ST7565_drawchar_anywhere(cx + r + 4, cy - 3,  'E');  // right
+    ST7565_drawchar_anywhere(cx - 2, cy + r + 2,  'S');  // bottom
+    ST7565_drawchar_anywhere(cx - r - 10, cy - 3, 'W');  // left
 
-    float offset = 180.0;
+    // If you want a small calibration tweak later, start with 0
+    float offset = 0.0f;
 
-    // Convert heading to radians
     float angle = (heading_deg + offset) * (3.14159265f / 180.0f);
 
-    // End point of needle
     float fx = cx + r * sinf(angle);
-    float fy = cy - r * cosf(angle);   // y is inverted
+    float fy = cy - r * cosf(angle);   // minus is correct for LCD Y-down
 
     uint8_t x1 = (uint8_t)(fx + 0.5f);
     uint8_t y1 = (uint8_t)(fy + 0.5f);
 
-    // Draw needle
     ST7565_drawline(cx, cy, x1, y1, BLACK, 2);
+}
+
+// Convert float to string with fixed number of decimals
+// Example: ftoa(buf, 3.14159f, 3) → "3.142"
+void ftoa(char *buf, float value, int decimals)
+{
+    // Handle negative numbers
+    if (value < 0) {
+        *buf++ = '-';
+        value = -value;
+    }
+
+    // Extract integer part
+    int int_part = (int)value;
+
+    // Extract fractional part
+    float remainder = value - (float)int_part;
+
+    // Scale fractional part
+    int scale = 1;
+    for (int i = 0; i < decimals; i++)
+        scale *= 10;
+
+    int frac_part = (int)(remainder * scale + 0.5f);  // round correctly
+
+    // Convert integer part
+    sprintf(buf, "%d", int_part);   // uses ONLY %d → no float printf
+
+    // Move buffer to end
+    while (*buf != '\0') buf++;
+
+    if (decimals > 0) {
+        *buf++ = '.';
+
+        // Zero padding for fractional part
+        int pad = scale / 10;
+        while (pad > 1 && frac_part < pad) {
+            *buf++ = '0';
+            pad /= 10;
+        }
+
+        // Convert fractional part
+        sprintf(buf, "%d", frac_part);  // still only %d
+    }
 }
 
 /* USER CODE END 0 */
@@ -166,7 +227,6 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
   MX_I2C1_Init();
   MX_RTC_Init();
   MX_SPI1_Init();
@@ -233,14 +293,12 @@ int main(void)
           if (interface_state == SENSORS) {
               float_t pressure;
               if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
-                  snprintf(pressure_string, sizeof(pressure_string),
-                           "Pressure: %.2f HPa", pressure);
+            	  ftoa(pressure_string, pressure, 2);
               }
 
               float temperature;
               if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == HAL_OK) {
-                  snprintf(temperature_string, sizeof(temperature_string),
-                           "Temperature: %.2f C", temperature);
+                  ftoa(temperature_string, temperature, 2);
               }
 
               memset(displayBuffer, 0, sizeof(displayBuffer));
@@ -325,9 +383,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_I2C1
-                              |RCC_PERIPHCLK_RTC;
-  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_RTC;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -579,41 +635,6 @@ static void MX_SPI2_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 62500;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -643,6 +664,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : USART_TX_Pin USART_RX_Pin */
+  GPIO_InitStruct.Pin = USART_TX_Pin|USART_RX_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF4_USART2;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA4 */
