@@ -25,14 +25,23 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum {
-	PRESSURE,
-	TEMPERATURE
-} Sensor_Type;
+typedef struct {
+	uint8_t hours;
+	uint8_t minutes;
+	uint8_t seconds;
+
+	uint8_t day;
+	uint8_t month;
+	uint8_t year;
+} DateTime_t;
 
 typedef enum {
+	SET_TIME,
+	TIME,
 	COMPASS,
-	SENSORS
+	INCLINE,
+	PRESSURE,
+	TEMPERATURE,
 } Interface_State_t;
 
 /* USER CODE END PTD */
@@ -81,8 +90,11 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void IMU_Init(void);
 // void Send_Data (float data);
+void RTC_GetDateTime(DateTime_t *dt);
 void Draw_Compass(float heading_deg);
 void ftoa(char* buf, float value, int decimals);
+float Calculate_Altitude(float pressure_hpa);
+float Celsius_To_Fahrenheit(float celsius_temperature);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -100,8 +112,8 @@ static void IMU_Init(void) {
 	                        C6DOFIMU13_MAG_OP_MODE_CONT,
 	                        C6DOFIMU13_MAG_TEMP_MEAS_ON);
 }
-
-/* void Send_Data(float data) {
+/*
+void Send_Data(float data) {
     RTC_TimeTypeDef sTime;
     RTC_DateTypeDef sDate;
 
@@ -122,6 +134,14 @@ static void IMU_Init(void) {
 
     HAL_UART_Transmit(&huart2, (uint8_t*)out_buf, strlen(out_buf), HAL_MAX_DELAY);
 }*/
+
+void RTC_GetDateTime(DateTime_t *dt) {
+	RTC_TimeTypeDef rtcTime;
+	RTC_DateTypeDef rtcDate;
+
+	HAL_RTC_GetTime(&hrtc, &rtcTime, RTC_FORMAT_BIN);
+	HAL_RTC_Get_Date(&hrtc, &rtcDate, RTC_FORMAT_BIN);
+}
 
 void Draw_Compass(float heading_deg)
 {
@@ -196,6 +216,30 @@ void ftoa(char *buf, float value, int decimals)
     }
 }
 
+float Calculate_Altitude(float pressure_hpa) {
+	float base = pressure_hpa / 1013.25;
+	float exp = 0.190284;
+	return (1 - pow(base, exp)) * 145366.45;
+}
+
+float Celsius_To_Fahrenheit(float celsius_temperature) {
+	return celsius_temperature * 1.8 + 32;
+}
+
+uint32_t Read_VDD_mV(void)
+{
+  HAL_ADC_Start(&hadc);
+  HAL_ADC_PollForConversion(&hadc, 10);
+
+  uint32_t vrefint_adc = HAL_ADC_GetValue(&hadc);
+
+  HAL_ADC_Stop(&hadc);
+
+  /* Converting to VDD (mV) using factory calibration constants */
+  uint32_t vdd_mV = (3000UL * (*VREFINT_CAL)) / vrefint_adc;
+
+  return vdd_mV;
+}
 /* USER CODE END 0 */
 
 /**
@@ -273,8 +317,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      char pressure_string[32];
-      char temperature_string[32];
+      char pressure_display_string[37] = "Pressure (HPa): ";
+      char temperature_display_string[38] = "Temperature (C): ";
 
       if (power_button_flag) {
           power_button_flag = 0;  // Clear flag
@@ -287,45 +331,85 @@ int main(void)
       if (rtc_tick_flag) {
           rtc_tick_flag = 0; // Clear flag
 
-          float ax, ay, az;
-          float mx, my, mz;
+          if (interface_state == SET_TIME) {
 
-          if (interface_state == SENSORS) {
+          }
+
+          else if (interface_state == PRESSURE) {
               float_t pressure;
+              char pressure_string[20];
               if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
             	  ftoa(pressure_string, pressure, 2);
-              }
-
-              float temperature;
-              if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == HAL_OK) {
-                  ftoa(temperature_string, temperature, 2);
+            	  strcat(pressure_display_string, pressure_string);
+              } else {
+            	  	strcpy(pressure_display_string, "Pressure Failure");
               }
 
               memset(displayBuffer, 0, sizeof(displayBuffer));
 
+              /*uint32_t voltage_val = Read_VDD_mV();
+              char voltage[20];
+              sprintf(voltage, "%d", (int) voltage_val);*/
+
               ST7565_drawstring_anywhere(
-                  (LCD_WIDTH / 2) - ((strlen(pressure_string) / 2) * 6),
+                  (LCD_WIDTH / 2) - ((strlen(pressure_display_string) / 2) * 6),
                   27,
-                  pressure_string
+                  pressure_display_string
               );
 
+              /*ST7565_drawstring_anywhere(
+                                (LCD_WIDTH / 2) - ((strlen(voltage) / 2) * 6),
+                                6,
+                                voltage
+              );*/
+
+          } else if (interface_state == TEMPERATURE) {
+              float temperature;
+              char temperature_string[20];
+              if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == STTS22H_OK) {
+                  ftoa(temperature_string, temperature, 2);
+                  strcat(temperature_display_string, temperature_string);
+              } else {
+            	  strcpy(temperature_display_string, "Temperature Failure");
+            }
+
+              memset(displayBuffer, 0, sizeof(displayBuffer));
               ST7565_drawstring_anywhere(
-                  (LCD_WIDTH / 2) - ((strlen(temperature_string) / 2) * 6),
+                  (LCD_WIDTH / 2) - ((strlen(temperature_display_string) / 2) * 6),
                   6,
-                  temperature_string
+                  temperature_display_string
               );
-          } else if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
-                  C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK && interface_state == COMPASS)
-              {
-            	    float heading_rad = atan2f(my, mx);             // angle in radians
-            	    float heading_deg = heading_rad * (180.0f / 3.14159265f);
-
-            	    if (heading_deg < 0) {
-            	        heading_deg += 360.0f;                      // normalize to 0–360
-            	    }
-            	  memset(displayBuffer, 0, sizeof(displayBuffer));
-            	  Draw_Compass(heading_deg);
           }
+
+          else if (interface_state == COMPASS)
+          {
+              float ax, ay, az;
+              float mx, my, mz;
+
+              if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
+                  C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK)
+              {
+                  float heading_rad = atan2f(my, mx);
+                  float heading_deg = heading_rad * (180.0f / 3.14159265f);
+
+                  if (heading_deg < 0.0f) {
+                      heading_deg += 360.0f;
+                  }
+
+                  memset(displayBuffer, 0, sizeof(displayBuffer));
+                  Draw_Compass(heading_deg);
+              }
+              else
+              {
+            	  char IMU_error[15] = "IMU Failure";
+                  ST7565_drawstring_anywhere(
+                	(LCD_WIDTH / 2) - ((strlen(IMU_error)) / 2 * 6),
+					27,
+					IMU_error
+                  );
+              }
+          }
+
 
           updateDisplay();
       }

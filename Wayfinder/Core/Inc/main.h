@@ -31,6 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "stm32l0xx.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <lps22hh.h>
@@ -54,7 +55,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+#define VREFINT_CAL ((uint16_t*) (0x1FF80078UL))
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
