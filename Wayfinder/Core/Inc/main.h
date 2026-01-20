@@ -56,6 +56,12 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 #define VREFINT_CAL ((uint16_t*) (0x1FF80078UL))
+
+#define CHAR_W 6
+#define CHAR_H 8
+
+#define YEAR_MIN 2000u
+#define YEAR_MAX 2099u
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

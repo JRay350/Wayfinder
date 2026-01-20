@@ -26,6 +26,8 @@ License along with this library.
 #include "ST7565.h"
 #include <string.h>
 
+#define COL_OFFSET 4
+
 extern const uint8_t font[];
 uint8_t displayBuffer[1024];
 
@@ -124,7 +126,6 @@ void ST7565_drawstring_anywhere(uint8_t x, uint8_t y, const char* str)
   }
 }
 
-
 void ST7565_drawchar_anywhere(uint8_t x, uint8_t y, char c)
 {
   uint8_t i, j;
@@ -141,6 +142,7 @@ void ST7565_drawchar_anywhere(uint8_t x, uint8_t y, char c)
 	}
   }
 }
+
 
 
 
@@ -293,18 +295,13 @@ void ST7565_fillcircle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t color)
 // Update the physical display with the contents of the display buffer
 void updateDisplay(void)
 {
-    // Assume ADC/COM already set in init and left alone
-
     for (uint8_t page = 0; page < LCD_HEIGHT / 8; page++) {
         ST7565_command(CMD_SET_PAGE | page);
-
-        // Start from column 0 each page
-        ST7565_command(CMD_SET_COLUMN_LOWER | 0x0);
-        ST7565_command(CMD_SET_COLUMN_UPPER | 0x0);
+        ST7565_command(CMD_SET_COLUMN_LOWER | (COL_OFFSET & 0x0F));
+        ST7565_command(CMD_SET_COLUMN_UPPER | ((COL_OFFSET >> 4) & 0x0F));
 
         for (uint8_t column = 0; column < LCD_WIDTH; column++) {
-            uint8_t data = displayBuffer[page * LCD_WIDTH + column];
-            ST7565_data(data);
+            ST7565_data(displayBuffer[page * LCD_WIDTH + column]);
         }
     }
 }
