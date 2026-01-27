@@ -116,6 +116,29 @@ void  ST7565_drawchar(uint8_t x, uint8_t line, char c)
  ST7565_updateBoundingBox(x-5, line*8, x-1, line*8 + 8);
 }
 
+static void draw_colon_7x12(uint8_t x, uint8_t y, uint8_t color)
+{
+    // 7x12 grid: width 7, height 12
+    // Make two dots, each 2 rows tall and 2 columns wide.
+    uint8_t cx0 = x + 3;   // centered-ish
+    uint8_t cx1 = x + 4;
+
+    // top dot rows
+    uint8_t r0 = y + 3;
+    uint8_t r1 = y + 4;
+
+    // bottom dot rows
+    uint8_t r2 = y + 7;
+    uint8_t r3 = y + 8;
+
+    for (uint8_t cx = cx0; cx <= cx1; cx++) {
+        ST7565_setpixel(cx, r0, color);
+        ST7565_setpixel(cx, r1, color);
+        ST7565_setpixel(cx, r2, color);
+        ST7565_setpixel(cx, r3, color);
+    }
+}
+
 static void draw_colon_8x13(uint8_t x, uint8_t y, uint8_t color)
 {
     // Two dots, each 2 rows tall, 2 columns wide, centered-ish
@@ -212,6 +235,13 @@ void ST7565_drawstring_anywhere_6x10(uint8_t x, uint8_t y, const char *s)
 
 void ST7565_drawchar_anywhere_7x12(uint8_t x, uint8_t y, char c)
 {
+    if (c == ':') {
+        // Clear the glyph box so old pixels don't remain
+        ST7565_fillrect(x, y, FONT7X12_W, FONT7X12_H, WHITE);
+        draw_colon_7x12(x, y, BLACK);
+        return;
+    }
+
     ST7565_drawchar_anywhere_scaled(x, y, c, FONT7X12_W, FONT7X12_H);
 }
 
