@@ -265,8 +265,8 @@ void RTC_DisplayEditDateTime(void)
 
     /* ---------- Centering using 6x10 step ---------- */
     uint16_t prompt_w = (uint16_t)strlen(prompt)   * FONT6X10_STEP;
-    uint16_t time_w   = (uint16_t)strlen(time_str) * FONT6X10_STEP;
-    uint16_t date_w   = (uint16_t)strlen(date_str) * FONT6X10_STEP;
+    uint16_t time_w   = (uint16_t)strlen(time_str) * FONT7X12_STEP;
+    uint16_t date_w   = (uint16_t)strlen(date_str) * FONT7X12_STEP;
 
     uint8_t prompt_x = (prompt_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - prompt_w) / 2) : 0;
     uint8_t time_x   = (time_w   < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - time_w)   / 2) : 0;
@@ -280,13 +280,13 @@ void RTC_DisplayEditDateTime(void)
     uint8_t top_y   = (LCD_HEIGHT > block_h) ? (uint8_t)((LCD_HEIGHT - block_h) / 2) : 0;
 
     uint8_t prompt_y = top_y;
-    uint8_t time_y   = (uint8_t)(prompt_y + FONT6X10_H + prompt_gap);
-    uint8_t date_y   = (uint8_t)(time_y   + FONT6X10_H + line_gap);
+    uint8_t time_y   = (uint8_t)(prompt_y + FONT7X12_H + prompt_gap);
+    uint8_t date_y   = (uint8_t)(time_y   + FONT7X12_H + line_gap);
 
     /* ---------- Draw ---------- */
     ST7565_drawstring_anywhere_6x10(prompt_x, prompt_y, prompt);
-    ST7565_drawstring_anywhere_6x10(time_x,   time_y,   time_str);
-    ST7565_drawstring_anywhere_6x10(date_x,   date_y,   date_str);
+    ST7565_drawstring_anywhere_7x12(time_x,   time_y,   time_str);
+    ST7565_drawstring_anywhere_7x12(date_x,   date_y,   date_str);
 
     /* ---------- Underline active field ---------- */
     if (blink) {
@@ -304,40 +304,40 @@ void RTC_DisplayEditDateTime(void)
         switch (time_edit_field) {
         /* Date: MM/DD/YYYY */
         case EDIT_MONTH:
-            ul_x = (uint8_t)(date_x + 0 * FONT6X10_STEP);
+            ul_x = (uint8_t)(date_x + 0 * FONT7X12_STEP);
             ul_y = underline_y_date;
-            ul_w = (uint8_t)(2 * FONT6X10_STEP);
+            ul_w = (uint8_t)(2 * FONT7X12_STEP);
             break;
 
         case EDIT_DAY:
-            ul_x = (uint8_t)(date_x + 3 * FONT6X10_STEP); // after "MM/"
+            ul_x = (uint8_t)(date_x + 3 * FONT7X12_STEP); // after "MM/"
             ul_y = underline_y_date;
-            ul_w = (uint8_t)(2 * FONT6X10_STEP);
+            ul_w = (uint8_t)(2 * FONT7X12_STEP);
             break;
 
         case EDIT_YEAR:
-            ul_x = (uint8_t)(date_x + 6 * FONT6X10_STEP); // after "MM/DD/"
+            ul_x = (uint8_t)(date_x + 6 * FONT7X12_STEP); // after "MM/DD/"
             ul_y = underline_y_date;
-            ul_w = (uint8_t)(4 * FONT6X10_STEP);
+            ul_w = (uint8_t)(4 * FONT7X12_STEP);
             break;
 
         /* Time: HH:MM:SS */
         case EDIT_HOUR:
-            ul_x = (uint8_t)(time_x + 0 * FONT6X10_STEP);
+            ul_x = (uint8_t)(time_x + 0 * FONT7X12_STEP);
             ul_y = underline_y_time;
-            ul_w = (uint8_t)(2 * FONT6X10_STEP);
+            ul_w = (uint8_t)(2 * FONT7X12_STEP);
             break;
 
         case EDIT_MINUTE:
-            ul_x = (uint8_t)(time_x + 3 * FONT6X10_STEP); // after "HH:"
+            ul_x = (uint8_t)(time_x + 3 * FONT7X12_STEP); // after "HH:"
             ul_y = underline_y_time;
-            ul_w = (uint8_t)(2 * FONT6X10_STEP);
+            ul_w = (uint8_t)(2 * FONT7X12_STEP);
             break;
 
         case EDIT_SECOND:
-            ul_x = (uint8_t)(time_x + 6 * FONT6X10_STEP); // after "HH:MM:"
+            ul_x = (uint8_t)(time_x + 6 * FONT7X12_STEP); // after "HH:MM:"
             ul_y = underline_y_time;
-            ul_w = (uint8_t)(2 * FONT6X10_STEP);
+            ul_w = (uint8_t)(2 * FONT7X12_STEP);
             break;
 
         default:

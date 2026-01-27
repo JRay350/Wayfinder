@@ -121,5 +121,6 @@ extern SPI_HandleTypeDef hspi2;
   void ST7565_drawstring_anywhere_7x12(uint8_t x, uint8_t y, const char *s);
   void ST7565_drawstring_anywhere_8x13(uint8_t x, uint8_t y, const char *s);
   static void ST7565_drawchar_anywhere_scaled(uint8_t x, uint8_t y, char c, uint8_t dstW, uint8_t dstH);
+  static void draw_colon_8x13(uint8_t x, uint8_t y, uint8_t color);
   uint8_t ST7565_off();
   uint8_t ST7565_on();
