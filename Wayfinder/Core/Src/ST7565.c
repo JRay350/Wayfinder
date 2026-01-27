@@ -116,6 +116,22 @@ void  ST7565_drawchar(uint8_t x, uint8_t line, char c)
  ST7565_updateBoundingBox(x-5, line*8, x-1, line*8 + 8);
 }
 
+static void ST7565_drawchar_anywhere_scaled(uint8_t x, uint8_t y, char c, uint8_t dstW, uint8_t dstH)
+{
+    const uint8_t srcW = 5, srcH = 8;
+
+    for (uint8_t dx = 0; dx < dstW; dx++) {
+        uint8_t sx = (uint16_t)dx * srcW / dstW;   // 0..4
+        uint8_t col = font[(uint8_t)c * 5 + sx];
+
+        for (uint8_t dy = 0; dy < dstH; dy++) {
+            uint8_t sy = (uint16_t)dy * srcH / dstH; // 0..7
+            uint8_t on = (col >> sy) & 1u;
+            ST7565_setpixel(x + dx, y + dy, on ? BLACK : WHITE);
+        }
+    }
+}
+
 void ST7565_drawstring_anywhere(uint8_t x, uint8_t y, const char* str)
 {
   uint8_t i = 0;
@@ -143,8 +159,59 @@ void ST7565_drawchar_anywhere(uint8_t x, uint8_t y, char c)
   }
 }
 
+void ST7565_drawchar_anywhere_6x10(uint8_t x, uint8_t y, char c)
+{
+    const uint8_t srcW = 5, srcH = 8;
+    const uint8_t dstW = 6, dstH = 10;
 
+    for (uint8_t dx = 0; dx < dstW; dx++) {
+        // map destination x -> source x (0..4)
+        uint8_t sx = (uint16_t)dx * srcW / dstW;
+        uint8_t col = font[(uint8_t)c * 5 + sx];
 
+        for (uint8_t dy = 0; dy < dstH; dy++) {
+            // map destination y -> source y (0..7)
+            uint8_t sy = (uint16_t)dy * srcH / dstH;
+
+            uint8_t on = (col >> sy) & 1u;
+            ST7565_setpixel(x + dx, y + dy, on ? BLACK : WHITE);
+        }
+    }
+}
+
+void ST7565_drawstring_anywhere_6x10(uint8_t x, uint8_t y, const char *s)
+{
+    while (*s) {
+        ST7565_drawchar_anywhere_6x10(x, y, *s++);
+        x += 7;  // 6px glyph + 1px spacing
+    }
+}
+
+void ST7565_drawchar_anywhere_7x12(uint8_t x, uint8_t y, char c)
+{
+    ST7565_drawchar_anywhere_scaled(x, y, c, FONT7X12_W, FONT7X12_H);
+}
+
+void ST7565_drawstring_anywhere_7x12(uint8_t x, uint8_t y, const char *s)
+{
+    while (*s) {
+        ST7565_drawchar_anywhere_7x12(x, y, *s++);
+        x += FONT7X12_STEP;
+    }
+}
+
+void ST7565_drawchar_anywhere_8x13(uint8_t x, uint8_t y, char c)
+{
+    ST7565_drawchar_anywhere_scaled(x, y, c, FONT8X13_W, FONT8X13_H);
+}
+
+void ST7565_drawstring_anywhere_8x13(uint8_t x, uint8_t y, const char *s)
+{
+    while (*s) {
+        ST7565_drawchar_anywhere_8x13(x, y, *s++);
+        x += FONT8X13_STEP;
+    }
+}
 
 // bresenham's algorithm - thx wikpedia
 void ST7565_drawline(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color, uint8_t width)

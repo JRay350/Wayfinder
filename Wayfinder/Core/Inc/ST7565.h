@@ -26,6 +26,22 @@ License along with this library.
 
 #define swap(a, b) { uint8_t t = a; a = b; b = t; }
 
+#define FONT6X10_W       6
+#define FONT6X10_H       10
+#define FONT6X10_SPACING 1
+#define FONT6X10_STEP    (FONT6X10_W + FONT6X10_SPACING)   // 7
+
+#define FONT7X12_W       7
+#define FONT7X12_H       12
+#define FONT7X12_SP      1
+#define FONT7X12_STEP    (FONT7X12_W + FONT7X12_SP)   // 8
+
+#define FONT8X13_W       8
+#define FONT8X13_H       13
+#define FONT8X13_SP      1
+#define FONT8X13_STEP    (FONT8X13_W + FONT8X13_SP)   // 9
+
+
 #define BLACK 1
 #define WHITE 0
 
@@ -93,10 +109,17 @@ extern SPI_HandleTypeDef hspi2;
   void ST7565_fillrect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t color);
   void ST7565_drawline(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t color, uint8_t width);
   void ST7565_drawchar(uint8_t x, uint8_t line, char c);
+  void ST7565_drawchar_anywhere_6x10(uint8_t x, uint8_t y, char c);
+  void ST7565_drawchar_anywhere_7x12(uint8_t x, uint8_t y, char c);
+  void ST7565_drawchar_anywhere_8x13(uint8_t x, uint8_t y, char c);
   void ST7565_drawstring(uint8_t x, uint8_t line, char *c);
   void ST7565_drawbitmap(uint8_t x, uint8_t y, const uint8_t *bitmap, uint8_t w, uint8_t h, uint8_t color);
   void pin_config();
   void ST7565_drawchar_anywhere(uint8_t x, uint8_t y, char c);
   void ST7565_drawstring_anywhere(uint8_t x, uint8_t y, const char* str);
+  void ST7565_drawstring_anywhere_6x10(uint8_t x, uint8_t y, const char *s);
+  void ST7565_drawstring_anywhere_7x12(uint8_t x, uint8_t y, const char *s);
+  void ST7565_drawstring_anywhere_8x13(uint8_t x, uint8_t y, const char *s);
+  static void ST7565_drawchar_anywhere_scaled(uint8_t x, uint8_t y, char c, uint8_t dstW, uint8_t dstH);
   uint8_t ST7565_off();
   uint8_t ST7565_on();

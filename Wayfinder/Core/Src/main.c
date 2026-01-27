@@ -206,41 +206,42 @@ HAL_StatusTypeDef RTC_CommitDateTime(const DateTime_t *dt) {
     return HAL_OK;
 }
 
-void RTC_DisplayDateTime(DateTime_t *dt) {
-		char time_str[16];
-		char date_str[16];
+void RTC_DisplayDateTime(DateTime_t *dt)
+{
+    char time_str[16];
+    char date_str[16];
 
-	    snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
-	             (unsigned)(dt->hours   % 24),
-	             (unsigned)(dt->minutes % 60),
-	             (unsigned)(dt->seconds % 60));
+    snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u",
+             (unsigned)(dt->hours   % 24),
+             (unsigned)(dt->minutes % 60),
+             (unsigned)(dt->seconds % 60));
 
+    snprintf(date_str, sizeof(date_str), "%02u/%02u/%04u",
+             (unsigned)(dt->month % 13),
+             (unsigned)(dt->day   % 32),
+             (unsigned)dt->year);
 
+    memset(displayBuffer, 0, sizeof(displayBuffer));
 
-	    snprintf(date_str, sizeof(date_str), "%02u/%02u/%04u",
-	             (unsigned)(dt->month % 13),   // month should be 1..12
-	             (unsigned)(dt->day   % 32),  // day should be 1..31
-	             (unsigned)dt->year);
+    /* ---------- Centering using 6x10 step ---------- */
+    uint16_t time_w = (uint16_t)strlen(time_str) * FONT8X13_STEP;
+    uint16_t date_w = (uint16_t)strlen(date_str) * FONT8X13_STEP;
 
+    uint8_t time_x = (time_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - time_w) / 2) : 0;
+    uint8_t date_x = (date_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - date_w) / 2) : 0;
 
-	    memset(displayBuffer, 0, sizeof(displayBuffer));
+    uint8_t gap = 8;
+    uint8_t block_h = 2 * FONT8X13_H + gap;
+    uint8_t top_y   = (LCD_HEIGHT > block_h) ? (uint8_t)((LCD_HEIGHT - block_h) / 2) : 0;
 
-	    // Compute widths for centering
-	    uint16_t time_w = (uint16_t)strlen(time_str) * CHAR_W;
-	    uint16_t date_w = (uint16_t)strlen(date_str) * CHAR_W;
+    uint8_t time_y = top_y;
+    uint8_t date_y = (uint8_t)(top_y + FONT6X10_H + gap);
 
-	    uint8_t time_x = (time_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - time_w) / 2) : 0;
-	    uint8_t date_x = (date_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - date_w) / 2) : 0;
+    ST7565_drawstring_anywhere_8x13(time_x, time_y, time_str);
+    ST7565_drawstring_anywhere_8x13(date_x, date_y, date_str);
 
-	    uint8_t gap = 2;
-	    uint8_t block_h = (2 * CHAR_H) + gap;
-	    uint8_t top_y = (LCD_HEIGHT > block_h) ? (uint8_t)((LCD_HEIGHT - block_h) / 2) : 0;
-
-	    uint8_t time_y = top_y;
-	    uint8_t date_y = top_y + CHAR_H + gap;
-
-	    ST7565_drawstring_anywhere(time_x, time_y, time_str);
-	    ST7565_drawstring_anywhere(date_x, date_y, date_str);
+    // if you want immediate refresh here:
+    // updateDisplay();
 }
 
 void RTC_DisplayEditDateTime(void)
@@ -262,37 +263,36 @@ void RTC_DisplayEditDateTime(void)
 
     memset(displayBuffer, 0, sizeof(displayBuffer));
 
-    /* ---------- Centering ---------- */
-    uint16_t prompt_w = (uint16_t)strlen(prompt)   * CHAR_W;
-    uint16_t time_w   = (uint16_t)strlen(time_str) * CHAR_W;
-    uint16_t date_w   = (uint16_t)strlen(date_str) * CHAR_W;
+    /* ---------- Centering using 6x10 step ---------- */
+    uint16_t prompt_w = (uint16_t)strlen(prompt)   * FONT6X10_STEP;
+    uint16_t time_w   = (uint16_t)strlen(time_str) * FONT6X10_STEP;
+    uint16_t date_w   = (uint16_t)strlen(date_str) * FONT6X10_STEP;
 
     uint8_t prompt_x = (prompt_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - prompt_w) / 2) : 0;
     uint8_t time_x   = (time_w   < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - time_w)   / 2) : 0;
     uint8_t date_x   = (date_w   < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - date_w)   / 2) : 0;
 
     /* ---------- Spacing control ---------- */
-    uint8_t prompt_gap = 10;   // extra space under prompt
-    uint8_t line_gap   = 6;   // space between time and date
+    uint8_t prompt_gap = 10;
+    uint8_t line_gap   = 6;
 
-    uint8_t block_h = (3 * CHAR_H) + prompt_gap + line_gap;
+    uint8_t block_h = (3 * FONT6X10_H) + prompt_gap + line_gap;
     uint8_t top_y   = (LCD_HEIGHT > block_h) ? (uint8_t)((LCD_HEIGHT - block_h) / 2) : 0;
 
     uint8_t prompt_y = top_y;
-    uint8_t time_y   = (uint8_t)(prompt_y + CHAR_H + prompt_gap);
-    uint8_t date_y   = (uint8_t)(time_y   + CHAR_H + line_gap);
+    uint8_t time_y   = (uint8_t)(prompt_y + FONT6X10_H + prompt_gap);
+    uint8_t date_y   = (uint8_t)(time_y   + FONT6X10_H + line_gap);
 
     /* ---------- Draw ---------- */
-    ST7565_drawstring_anywhere(prompt_x, prompt_y, (char *)prompt);
-    ST7565_drawstring_anywhere(time_x,   time_y,   time_str);
-    ST7565_drawstring_anywhere(date_x,   date_y,   date_str);
+    ST7565_drawstring_anywhere_6x10(prompt_x, prompt_y, prompt);
+    ST7565_drawstring_anywhere_6x10(time_x,   time_y,   time_str);
+    ST7565_drawstring_anywhere_6x10(date_x,   date_y,   date_str);
 
     /* ---------- Underline active field ---------- */
     if (blink) {
         uint8_t ul_x = 0, ul_y = 0, ul_w = 0;
 
-        // Your font draw routine treats y like a baseline/bottom reference.
-        // To go visually DOWN on your display, you need a SMALLER y.
+        // Keep original behavior: visually DOWN on your display = SMALLER y
         const uint8_t UL_BELOW_BASELINE = 1;
 
         uint8_t underline_y_time =
@@ -302,42 +302,42 @@ void RTC_DisplayEditDateTime(void)
             (date_y > UL_BELOW_BASELINE) ? (uint8_t)(date_y - UL_BELOW_BASELINE) : date_y;
 
         switch (time_edit_field) {
-        /* Date: MM-DD-YYYY */
+        /* Date: MM/DD/YYYY */
         case EDIT_MONTH:
-            ul_x = (uint8_t)(date_x + 0 * CHAR_W);
+            ul_x = (uint8_t)(date_x + 0 * FONT6X10_STEP);
             ul_y = underline_y_date;
-            ul_w = (uint8_t)(2 * CHAR_W);
+            ul_w = (uint8_t)(2 * FONT6X10_STEP);
             break;
 
         case EDIT_DAY:
-            ul_x = (uint8_t)(date_x + 3 * CHAR_W); // after "MM-"
+            ul_x = (uint8_t)(date_x + 3 * FONT6X10_STEP); // after "MM/"
             ul_y = underline_y_date;
-            ul_w = (uint8_t)(2 * CHAR_W);
+            ul_w = (uint8_t)(2 * FONT6X10_STEP);
             break;
 
         case EDIT_YEAR:
-            ul_x = (uint8_t)(date_x + 6 * CHAR_W); // after "MM-DD-"
+            ul_x = (uint8_t)(date_x + 6 * FONT6X10_STEP); // after "MM/DD/"
             ul_y = underline_y_date;
-            ul_w = (uint8_t)(4 * CHAR_W);
+            ul_w = (uint8_t)(4 * FONT6X10_STEP);
             break;
 
         /* Time: HH:MM:SS */
         case EDIT_HOUR:
-            ul_x = (uint8_t)(time_x + 0 * CHAR_W);
+            ul_x = (uint8_t)(time_x + 0 * FONT6X10_STEP);
             ul_y = underline_y_time;
-            ul_w = (uint8_t)(2 * CHAR_W);
+            ul_w = (uint8_t)(2 * FONT6X10_STEP);
             break;
 
         case EDIT_MINUTE:
-            ul_x = (uint8_t)(time_x + 3 * CHAR_W); // after "HH:"
+            ul_x = (uint8_t)(time_x + 3 * FONT6X10_STEP); // after "HH:"
             ul_y = underline_y_time;
-            ul_w = (uint8_t)(2 * CHAR_W);
+            ul_w = (uint8_t)(2 * FONT6X10_STEP);
             break;
 
         case EDIT_SECOND:
-            ul_x = (uint8_t)(time_x + 6 * CHAR_W); // after "HH:MM:"
+            ul_x = (uint8_t)(time_x + 6 * FONT6X10_STEP); // after "HH:MM:"
             ul_y = underline_y_time;
-            ul_w = (uint8_t)(2 * CHAR_W);
+            ul_w = (uint8_t)(2 * FONT6X10_STEP);
             break;
 
         default:
@@ -355,7 +355,11 @@ void RTC_DisplayEditDateTime(void)
             );
         }
     }
+
+    // if you want immediate refresh here:
+    // updateDisplay();
 }
+
 
 
 void NextTimeField(void) {
