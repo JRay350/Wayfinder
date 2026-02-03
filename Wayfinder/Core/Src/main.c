@@ -406,16 +406,16 @@ void RTC_DisplayCalibrate(void)
         char tmp[20];
 
         ftoa(tmp, temperature_offset, 2);
-        snprintf(vals[0], sizeof(vals[0]), "%s", tmp);
+        snprintf(vals[0], sizeof(vals[0]), "%s%cF", tmp, (char)DEGREE_CHAR);
 
         ftoa(tmp, magnetometer_offset, 2);
-        snprintf(vals[1], sizeof(vals[1]), "%s", tmp);
+        snprintf(vals[1], sizeof(vals[1]), "%s%c ", tmp, (char)DEGREE_CHAR);
 
         ftoa(tmp, accelerometer_offset, 2);
-        snprintf(vals[2], sizeof(vals[2]), "%s", tmp);
+        snprintf(vals[2], sizeof(vals[2]), "%s%c ", tmp, (char)DEGREE_CHAR);
 
         ftoa(tmp, pressure_offset, 2);
-        snprintf(vals[3], sizeof(vals[3]), "%s", tmp);
+        snprintf(vals[3], sizeof(vals[3]), "%sHPa", tmp);
     }
 
     memset(displayBuffer, 0, sizeof(displayBuffer));
@@ -429,7 +429,7 @@ void RTC_DisplayCalibrate(void)
     const uint8_t ROW_STEP  = FONT7X12_STEP;
 
     const uint8_t LEFT_MARGIN  = 0;
-    const uint8_t RIGHT_MARGIN = 0;
+    const uint8_t RIGHT_MARGIN = 30;
 
     const uint8_t split_x = 72; // prevent value/label collision
 

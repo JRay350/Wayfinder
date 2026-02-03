@@ -24,6 +24,8 @@ License along with this library.
 #include <stdint.h>
 #include "main.h"
 
+#define DEGREE_CHAR ((uint8_t)0xB0)
+
 #define swap(a, b) { uint8_t t = a; a = b; b = t; }
 
 #define FONT6X10_W       6

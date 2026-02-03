@@ -190,19 +190,45 @@ void ST7565_drawstring_anywhere(uint8_t x, uint8_t y, const char* str)
 
 void ST7565_drawchar_anywhere(uint8_t x, uint8_t y, char c)
 {
-  uint8_t i, j;
-  for (i = 0; i < 5; i++) {
-	uint8_t column = font[(unsigned char)c * 5 + i];
-	for (j = 0; j < 8; j++) {
-	  if ((y + j) < LCD_HEIGHT) {
-		if (column & (1 << j)) {
-			ST7565_setpixel(x + i, y + j, BLACK);
-		} else {
-			ST7565_setpixel(x + i, y + j, WHITE);
-		}
-	  }
-	}
-  }
+    // Special-case degree symbol: treat \xB0 as a custom glyph
+    if ((uint8_t)c == 0xB0) {
+
+        // A readable small ring (5 columns, 8 rows)
+        // Bits are vertical: bit0 = top row of the 8-pixel cell in your current renderer
+        static const uint8_t deg_cols[5] = { 0x00, 0x0E, 0x1B, 0x1B, 0x0E };
+
+        // Shiftable parameters
+
+        // Horizontal
+        if (x < (LCD_WIDTH - 5)) x = (uint8_t)(x - 1);
+        // Vertical
+        if (y >= 2) y = (uint8_t)(y + 2);
+
+        // Draw 5x8 degree glyph, and explicitly clear background in that box
+        for (uint8_t i = 0; i < 5; i++) {
+            uint8_t column = deg_cols[i];
+            for (uint8_t j = 0; j < 8; j++) {
+                uint8_t yy = (uint8_t)(y + j);
+                if (yy < LCD_HEIGHT) {
+                    ST7565_setpixel((uint8_t)(x + i), yy,
+                                    (column & (1u << j)) ? BLACK : WHITE);
+                }
+            }
+        }
+        return;
+    }
+
+    // Default: use font table
+    for (uint8_t i = 0; i < 5; i++) {
+        uint8_t column = font[(unsigned char)c * 5 + i];
+        for (uint8_t j = 0; j < 8; j++) {
+            uint8_t yy = (uint8_t)(y + j);
+            if (yy < LCD_HEIGHT) {
+                ST7565_setpixel((uint8_t)(x + i), yy,
+                                (column & (1u << j)) ? BLACK : WHITE);
+            }
+        }
+    }
 }
 
 void ST7565_drawchar_anywhere_6x10(uint8_t x, uint8_t y, char c)
@@ -248,10 +274,32 @@ void ST7565_drawchar_anywhere_7x12(uint8_t x, uint8_t y, char c)
 void ST7565_drawstring_anywhere_7x12(uint8_t x, uint8_t y, const char *s)
 {
     while (*s) {
-        ST7565_drawchar_anywhere_7x12(x, y, *s++);
-        x += FONT7X12_STEP;
+        uint8_t c = (uint8_t)(*s++);
+
+        if (c == DEGREE_CHAR) {
+            /*
+             * Draw degree symbol using ORIGINAL 5x8 font (unscaled).
+             * Inverted Y axis:
+             *   larger y = visually higher on screen
+             *
+             * These offsets place the degree nicely as a superscript
+             * inside a 7x12 character cell.
+             */
+            uint8_t deg_x = (uint8_t)(x + 2);  // center horizontally in cell
+            uint8_t deg_y = (uint8_t)(y + 5);  // raise vertically (tuned)
+
+            ST7565_drawchar_anywhere(deg_x, deg_y, (char)DEGREE_CHAR);
+
+            // Advance by scaled step so alignment stays consistent
+            x = (uint8_t)(x + FONT7X12_STEP);
+        }
+        else {
+            ST7565_drawchar_anywhere_7x12(x, y, (char)c);
+            x = (uint8_t)(x + FONT7X12_STEP);
+        }
     }
 }
+
 
 void ST7565_drawchar_anywhere_8x13(uint8_t x, uint8_t y, char c)
 {
