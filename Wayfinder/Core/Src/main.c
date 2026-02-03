@@ -104,10 +104,32 @@ volatile bool blink = false;
 
 volatile CalibrationEditField_t calibration_field = TEMPERATURE_FIELD;
 
-float_t temperature_offset = 0.0;
+float_t temperature_offset = -3.60;
 float_t magnetometer_offset = 0.0;
 float_t accelerometer_offset = 0.0;
 float_t pressure_offset = 0.0;
+
+static float_t press_hist[SPARK_W];
+static uint8_t press_head = 0;   // next write index
+static uint8_t press_count = 0;  // how many valid samples (<= SPARK_W)
+
+static float_t temp_hist[SPARK_W];
+static uint8_t temp_head = 0;
+static uint8_t temp_count = 0;
+
+static float_t incline_hist[SPARK_W];
+static uint8_t incline_head = 0;
+static uint8_t incline_count = 0;
+
+
+static int16_t press_scale_min = 260;
+static int16_t press_scale_max = 1260;
+
+static int16_t temp_scale_min = 24;
+static int16_t temp_scale_max = 100;
+
+static int16_t incline_scale_min = 0;
+static int16_t incline_scale_max = 360;
 
 extern uint8_t displayBuffer[1024];
 
@@ -126,6 +148,8 @@ static bool is_leap_year(uint16_t year);
 static uint8_t days_in_month(uint8_t month, uint16_t year);
 static void clamp_day_to_month(DateTime_t *t);
 static void IMU_Init(void);
+static void Spark_Push(float *hist, uint8_t *head, uint8_t *count, float v);
+static void Spark_DrawLine(uint8_t x, uint8_t y, uint8_t w, uint8_t h, Interface_State_t state, const float *hist, uint8_t head, uint8_t count, uint8_t draw_box);
 void EnterSetTimeMode(void);
 void RTC_GetDateTime(DateTime_t *dt);
 HAL_StatusTypeDef RTC_CommitDateTime(const DateTime_t *dt);
@@ -178,6 +202,153 @@ static void IMU_Init(void) {
 	                        C6DOFIMU13_MAG_RES_15_BIT,
 	                        C6DOFIMU13_MAG_OP_MODE_CONT,
 	                        C6DOFIMU13_MAG_TEMP_MEAS_ON);
+}
+
+static void Spark_Push(float *hist, uint8_t *head, uint8_t *count, float v)
+{
+    hist[*head] = v;
+    *head = (uint8_t)((*head + 1u) % SPARK_W);
+    if (*count < SPARK_W) (*count)++;
+}
+
+static void Spark_DrawLine(
+    uint8_t x, uint8_t y, uint8_t w, uint8_t h, Interface_State_t state,
+    const float *hist, uint8_t head, uint8_t count,
+    uint8_t draw_box
+)
+{
+    if (w == 0 || h == 0) return;
+
+    ST7565_fillrect(x, y, w, h, WHITE);
+    if (draw_box) ST7565_drawrect(x, y, w, h, BLACK);
+    if (count < 2) return;
+
+    // 1) Compute actual data min/max (for expand-only logic)
+    float data_min =  1e30f;
+    float data_max = -1e30f;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t idx = (uint8_t)((head + SPARK_W - count + i) % SPARK_W);
+        float v = hist[idx];
+        if (v < data_min) data_min = v;
+        if (v > data_max) data_max = v;
+    }
+
+    // 2) Pick the right standard range and persistent scale vars
+    int16_t std_min_i16, std_max_i16;
+    int16_t *scale_min_i16, *scale_max_i16;
+
+    // Expand margin and relax step are in *your units*
+    // (keep small; you can tune per-state)
+    float expand_margin = 0.0f;
+    int16_t relax_step_i16 = 0; // 0 = don't relax toward standard
+
+    switch (state) {
+        case PRESSURE:
+            std_min_i16   = 260;
+            std_max_i16   = 1260;
+            scale_min_i16 = &press_scale_min;
+            scale_max_i16 = &press_scale_max;
+
+            expand_margin = 5.0f;       // e.g. 5 units of whatever your pressure units are
+            relax_step_i16 = 0;         // set to 1..5 if you want it to drift back
+            break;
+
+        case TEMPERATURE:
+            std_min_i16   = -1;
+            std_max_i16   = 140;
+            scale_min_i16 = &temp_scale_min;
+            scale_max_i16 = &temp_scale_max;
+
+            expand_margin = 1.0f;       // 1 degree margin
+            relax_step_i16 = 0;
+            break;
+
+        default: // INCLINE
+            std_min_i16   = 0;
+            std_max_i16   = 360;
+            scale_min_i16 = &incline_scale_min;
+            scale_max_i16 = &incline_scale_max;
+
+            expand_margin = 2.0f;       // a couple degrees
+            relax_step_i16 = 0;
+            break;
+    }
+
+    // 3) Optional relax back toward standard range
+    // (Only matters if you allow expansion AND later want to shrink back)
+    if (relax_step_i16 > 0) {
+        if (*scale_min_i16 < std_min_i16) {
+            int16_t next = (int16_t)(*scale_min_i16 + relax_step_i16);
+            *scale_min_i16 = (next > std_min_i16) ? std_min_i16 : next;
+        } else if (*scale_min_i16 > std_min_i16) {
+            int16_t next = (int16_t)(*scale_min_i16 - relax_step_i16);
+            *scale_min_i16 = (next < std_min_i16) ? std_min_i16 : next;
+        }
+
+        if (*scale_max_i16 < std_max_i16) {
+            int16_t next = (int16_t)(*scale_max_i16 + relax_step_i16);
+            *scale_max_i16 = (next > std_max_i16) ? std_max_i16 : next;
+        } else if (*scale_max_i16 > std_max_i16) {
+            int16_t next = (int16_t)(*scale_max_i16 - relax_step_i16);
+            *scale_max_i16 = (next < std_max_i16) ? std_max_i16 : next;
+        }
+    } else {
+        // If you want strictly fixed range, just force:
+        // *scale_min_i16 = std_min_i16;
+        // *scale_max_i16 = std_max_i16;
+        //
+        // If you want "fixed-unless-exceeded", leave them as-is.
+    }
+
+    // 4) Expand-only if exceeded (using data_min/data_max)
+    // NOTE: only expand outward; never shrink here.
+    /*
+    if (data_min < (float)(*scale_min_i16)) {
+        float new_min = data_min - expand_margin;
+        if (new_min < -32768.0f) new_min = -32768.0f;
+        *scale_min_i16 = (int16_t)new_min;
+    }
+    if (data_max > (float)(*scale_max_i16)) {
+        float new_max = data_max + expand_margin;
+        if (new_max > 32767.0f) new_max = 32767.0f;
+        *scale_max_i16 = (int16_t)new_max;
+    }
+*/
+    // 5) Use persistent scales for plotting (convert to float)
+    float vmin = (float)(*scale_min_i16);
+    float vmax = (float)(*scale_max_i16);
+
+    float span = vmax - vmin;
+    if (span < 1e-6f) span = 1e-6f;
+
+    uint8_t prev_px = x;
+    uint8_t prev_py = (uint8_t)(y + (h - 1));
+
+    uint8_t n = count;
+    if (n > w) n = w;
+
+    for (uint8_t i = 0; i < n; i++) {
+        uint8_t src_i = (uint8_t)(count - n + i);
+        uint8_t idx = (uint8_t)((head + SPARK_W - count + src_i) % SPARK_W);
+        float v = hist[idx];
+
+        // Clamp to range so it always stays inside the box
+        if (v < vmin) v = vmin;
+        if (v > vmax) v = vmax;
+
+        float t = (v - vmin) / span; // 0..1
+
+        int16_t yy = (int16_t)((float)y + t * (float)(h - 1));
+
+        uint8_t px = (uint8_t)(x + i);
+        uint8_t py = (yy < y) ? y : (yy >= (y + h) ? (uint8_t)(y + h - 1) : (uint8_t)yy);
+
+        if (i > 0) ST7565_drawline(prev_px, prev_py, px, py, BLACK, 1);
+
+        prev_px = px;
+        prev_py = py;
+    }
 }
 
 void EnterSetTimeMode(void) {
@@ -415,7 +586,7 @@ void RTC_DisplayCalibrate(void)
         snprintf(vals[2], sizeof(vals[2]), "%s%c ", tmp, (char)DEGREE_CHAR);
 
         ftoa(tmp, pressure_offset, 2);
-        snprintf(vals[3], sizeof(vals[3]), "%sHPa", tmp);
+        snprintf(vals[3], sizeof(vals[3]), "%shPa", tmp);
     }
 
     memset(displayBuffer, 0, sizeof(displayBuffer));
@@ -831,6 +1002,7 @@ int main(void)
         	  float_t pressure;
 
         	  if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
+        	      Spark_Push(press_hist, &press_head, &press_count, pressure + pressure_offset);
         	      char pressure_string[20];
         	      ftoa(pressure_string, pressure + pressure_offset, 2); // e.g. "1013.25"
 
@@ -842,11 +1014,25 @@ int main(void)
         	  }
 
               memset(displayBuffer, 0, sizeof(displayBuffer));
-              ST7565_drawstring_anywhere(
+
+              ST7565_drawstring_anywhere_7x12(
                   (LCD_WIDTH / 2) - ((strlen(pressure_display_string) / 2) * 6),
                   27,
                   pressure_display_string
               );
+
+              Spark_DrawLine(
+                  24,                     // x
+                  5,                     // y (below numeric readout)
+                  80,                     // width
+                  32,                     // height
+                  PRESSURE,               // state selects press_scale_min/max
+                  press_hist,
+                  press_head,
+                  press_count,
+                  1                       // draw box
+              );
+
               updateDisplay();
               break;
           }
@@ -863,11 +1049,12 @@ int main(void)
 
         	  if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == STTS22H_OK) {
         		  temperature = Celsius_To_Fahrenheit(temperature);
+        	      Spark_Push(temp_hist, &temp_head, &temp_count, temperature + temperature_offset);
         	      char temperature_string[20];
         	      ftoa(temperature_string, temperature + temperature_offset, 2);   // e.g. "23.45"
 
         	      snprintf(temperature_display_string, sizeof(temperature_display_string),
-        	               "%s F", temperature_string);
+        	               "%s%cF", temperature_string, (char)DEGREE_CHAR);
         	  } else {
         	      snprintf(temperature_display_string, sizeof(temperature_display_string),
         	               "Temperature Failure");
@@ -875,11 +1062,24 @@ int main(void)
 
 
               memset(displayBuffer, 0, sizeof(displayBuffer));
-              ST7565_drawstring_anywhere(
-                  (LCD_WIDTH / 2) - ((strlen(temperature_display_string) / 2) * 6),
-                  6,
+              ST7565_drawstring_anywhere_7x12(
+                  (LCD_WIDTH - strlen(temperature_display_string) * 7) / 2,
+                  LCD_HEIGHT - 16,
                   temperature_display_string
               );
+
+              Spark_DrawLine(
+                  0,                     // x
+                  0,                     // y
+                  128,                     // width
+                  40,                     // height
+                  TEMPERATURE,               //
+                  temp_hist,
+                  temp_head,
+                  temp_count,
+                  1                       // draw box
+              );
+
               updateDisplay();
               break;
           }
@@ -1342,11 +1542,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		} else if (interface_state == CALIBRATION) {
 			AdjustOffset(-0.1);
 		}
-		else if (interface_state == PRESSURE) {
+		else if (interface_state == TEMPERATURE) {
 			interface_state = CALIBRATION;
-			prev_state = PRESSURE;
+			prev_state = TEMPERATURE;
 		} else {
-			interface_state = PRESSURE;
+			interface_state = TEMPERATURE;
 		}
 	} else if (GPIO_Pin == GPIO_PIN_3) { // PB3
 		switch (interface_state) {

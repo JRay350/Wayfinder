@@ -57,6 +57,9 @@ extern "C" {
 /* USER CODE BEGIN EM */
 #define VREFINT_CAL ((uint16_t*) (0x1FF80078UL))
 
+#define SPARK_W   128   // number of points (also pixels wide)
+#define SPARK_H   40   // pixels tall
+
 #define CHAR_W 6
 #define CHAR_H 8
 
