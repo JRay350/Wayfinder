@@ -793,22 +793,21 @@ void Draw_Compass(float heading_deg)
     const uint8_t cy = 32;
     const uint8_t r  = 20;
 
-    // Draw outer circle
     ST7565_drawcircle(cx, cy, r, BLACK);
 
-    // Draw cardinal letters in normal positions
-    ST7565_drawchar_anywhere(cx - 2, cy - r - 10, 'N');  // top
-    ST7565_drawchar_anywhere(cx + r + 4, cy - 3,  'E');  // right
-    ST7565_drawchar_anywhere(cx - 2, cy + r + 2,  'S');  // bottom
-    ST7565_drawchar_anywhere(cx - r - 10, cy - 3, 'W');  // left
+    // Y-UP coordinate system:
+    // North is ABOVE center => larger y
+    ST7565_drawchar_anywhere(cx - 2,  cy + r + 2,  'N');  // top
+    ST7565_drawchar_anywhere(cx + r + 4, cy - 3,   'E');  // right
+    ST7565_drawchar_anywhere(cx - 2,  cy - r - 10, 'S');  // bottom
+    ST7565_drawchar_anywhere(cx - r - 10, cy - 3,  'W');  // left
 
-    // If you want a small calibration tweak later, start with 0
     float offset = 0.0f;
-
     float angle = (heading_deg + offset) * (3.14159265f / 180.0f);
 
+    // Keep 0° pointing to North:
     float fx = cx + r * sinf(angle);
-    float fy = cy - r * cosf(angle);   // minus is correct for LCD Y-down
+    float fy = cy + r * cosf(angle);
 
     uint8_t x1 = (uint8_t)(fx + 0.5f);
     uint8_t y1 = (uint8_t)(fy + 0.5f);
@@ -1088,31 +1087,61 @@ int main(void)
               float ax, ay, az;
               float mx, my, mz;
 
+              // ---- Hard-iron offset calibration (min/max box) ----
+              // Keep these static so they persist across frames while you rotate the device.
+              static float mx_min =  1e9f, mx_max = -1e9f;
+              static float my_min =  1e9f, my_max = -1e9f;
+
+              // Set this to 0 when you want to freeze calibration (e.g., after one full rotation).
+              static uint8_t mag_cal_active = 1;
+
               memset(displayBuffer, 0, sizeof(displayBuffer));
 
               if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
                   C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK)
               {
-                  float heading_rad = atan2f(my, mx);
-                  float heading_deg = heading_rad * (180.0f / 3.14159265f) + magnetometer_offset;
-                  if (heading_deg < 0.0f) heading_deg += 360.0f;
+                  // Update min/max while calibrating
+                  if (mag_cal_active)
+                  {
+                      if (mx < mx_min) mx_min = mx;
+                      if (mx > mx_max) mx_max = mx;
 
-                  Draw_Compass(heading_deg); // draws into displayBuffer only
+                      if (my < my_min) my_min = my;
+                      if (my > my_max) my_max = my;
+                  }
+
+                  // Compute hard-iron offsets (center)
+                  float mx_off = 0.5f * (mx_max + mx_min);
+                  float my_off = 0.5f * (my_max + my_min);
+
+                  // Center the horizontal field vector
+                  float mx_c = mx - mx_off;
+                  float my_c = my - my_off;
+
+                  // Heading (using your chosen convention atan2(my, -mx))
+                  float heading_rad = atan2f(my_c, mx_c);
+                  float heading_deg = heading_rad * (180.0f / 3.14159265f) + magnetometer_offset;
+
+                  if (heading_deg < 0.0f) heading_deg += 360.0f;
+                  if (heading_deg >= 360.0f) heading_deg -= 360.0f;
+
+
+                  // Draw compass into displayBuffer only
+                  Draw_Compass(heading_deg);
               }
               else
               {
-                  char IMU_error[] = "IMU Failure";
+                  const char *IMU_error = "IMU Failure";
                   ST7565_drawstring_anywhere(
                       (LCD_WIDTH / 2) - ((strlen(IMU_error) / 2) * 6),
                       27,
-                      IMU_error
+                      (char*)IMU_error
                   );
               }
 
               updateDisplay();
               break;
           }
-
           default:
               break;
           }
