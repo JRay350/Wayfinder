@@ -104,8 +104,9 @@ volatile bool blink = false;
 
 volatile CalibrationEditField_t calibration_field = TEMPERATURE_FIELD;
 
-float_t mx_off = 274.8f;
-float_t my_off = 224.5f;
+float_t mx_off = 16.75f;
+float_t my_off = 9.85f;
+float_t mz_off = -168.55f;
 float_t sx = 73.05;
 float_t sy = 70.6;
 
@@ -1147,7 +1148,7 @@ int main(void)
                   float my_c = (my - my_off);
 
                   // Heading (using your chosen convention atan2(my, -mx))
-                  float heading_rad = atan2f(-my_c, mx_c);
+                  float heading_rad = atan2f(my_c, mx_c);
                   float heading_deg = heading_rad * (180.0f / 3.14159265f) + magnetometer_offset;
 
                   if (heading_deg < 0.0f) heading_deg += 360.0f;
