@@ -65,6 +65,8 @@ extern "C" {
 
 #define YEAR_MIN 2000u
 #define YEAR_MAX 2099u
+
+#define COMPASS_PERIOD_MS 50
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

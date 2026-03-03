@@ -104,6 +104,11 @@ volatile bool blink = false;
 
 volatile CalibrationEditField_t calibration_field = TEMPERATURE_FIELD;
 
+float_t mx_off = -9.00;
+float_t my_off = -55.80;
+float_t sx = 73.05;
+float_t sy = 70.6;
+
 float_t temperature_offset = -3.60;
 float_t magnetometer_offset = 0.0;
 float_t accelerometer_offset = 0.0;
@@ -970,7 +975,27 @@ int main(void)
               ui_dirty = true;               // blink underline/cursor
           }
           else if (interface_state == PRESSURE || interface_state == TEMPERATURE) ui_dirty = true;
-          else if (interface_state == COMPASS) ui_dirty = true;
+      }
+
+      static uint32_t next_compass_ms = 0;
+
+      if (interface_state == COMPASS)
+      {
+          uint32_t now = HAL_GetTick();
+
+          // initialize on first entry (or if it was 0)
+          if (next_compass_ms == 0) next_compass_ms = now;
+
+          if ((int32_t)(now - next_compass_ms) >= 0)
+          {
+              next_compass_ms += COMPASS_PERIOD_MS;
+              ui_dirty = true;  // triggers COMPASS redraw at ~20 Hz
+          }
+      }
+      else
+      {
+          // reset so when you re-enter COMPASS it updates immediately
+          next_compass_ms = 0;
       }
 
       /* ---------- Draw only when dirty ---------- */
@@ -1087,39 +1112,18 @@ int main(void)
               float ax, ay, az;
               float mx, my, mz;
 
-              // ---- Hard-iron offset calibration (min/max box) ----
-              // Keep these static so they persist across frames while you rotate the device.
-              static float mx_min =  1e9f, mx_max = -1e9f;
-              static float my_min =  1e9f, my_max = -1e9f;
-
-              // Set this to 0 when you want to freeze calibration (e.g., after one full rotation).
-              static uint8_t mag_cal_active = 1;
-
               memset(displayBuffer, 0, sizeof(displayBuffer));
 
               if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK &&
                   C6DOFIMU13_Mag_GetXYZ(&h6dof, &mx, &my, &mz) == HAL_OK)
               {
-                  // Update min/max while calibrating
-                  if (mag_cal_active)
-                  {
-                      if (mx < mx_min) mx_min = mx;
-                      if (mx > mx_max) mx_max = mx;
-
-                      if (my < my_min) my_min = my;
-                      if (my > my_max) my_max = my;
-                  }
-
-                  // Compute hard-iron offsets (center)
-                  float mx_off = 0.5f * (mx_max + mx_min);
-                  float my_off = 0.5f * (my_max + my_min);
 
                   // Center the horizontal field vector
-                  float mx_c = mx - mx_off;
-                  float my_c = my - my_off;
+                  float mx_c = (mx - mx_off) / sx;
+                  float my_c = (my - my_off) / sy;
 
                   // Heading (using your chosen convention atan2(my, -mx))
-                  float heading_rad = atan2f(my_c, mx_c);
+                  float heading_rad = atan2f(-my_c, mx_c);
                   float heading_deg = heading_rad * (180.0f / 3.14159265f) + magnetometer_offset;
 
                   if (heading_deg < 0.0f) heading_deg += 360.0f;
