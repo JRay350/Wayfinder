@@ -93,7 +93,7 @@ volatile bool rtc_tick_flag;
 volatile bool power_button_flag;
 
 Interface_State_t prev_state = SET_TIME;
-Interface_State_t interface_state = SET_TIME;
+Interface_State_t interface_state = COMPASS;
 
 volatile TimeEditField_t time_edit_field = EDIT_MONTH;
 DateTime_t edit_time;
@@ -104,8 +104,8 @@ volatile bool blink = false;
 
 volatile CalibrationEditField_t calibration_field = TEMPERATURE_FIELD;
 
-float_t mx_off = -9.00;
-float_t my_off = -55.80;
+float_t mx_off = 274.8f;
+float_t my_off = 224.5f;
 float_t sx = 73.05;
 float_t sy = 70.6;
 
@@ -794,30 +794,54 @@ void NextCalibrationField(void) {
 
 void Draw_Compass(float heading_deg)
 {
-    const uint8_t cx = 64;
-    const uint8_t cy = 32;
-    const uint8_t r  = 20;
+    // --- Layout: compass above, text below ---
+    const uint8_t text_h   = 14;  // 7x12 font (12px) + spacing
+    const uint8_t top_h    = (LCD_HEIGHT > text_h) ? (LCD_HEIGHT - text_h) : LCD_HEIGHT;
 
+    // Center compass in the top region
+    const uint8_t cx = (uint8_t)(LCD_WIDTH / 2);
+    const uint8_t cy = (uint8_t)(top_h / 2);
+
+    // Radius must fit inside top region (and screen width)
+    uint8_t r = 15;
+    if (cy > 1 && r > (uint8_t)(cy - 1)) r = (uint8_t)(cy - 1);
+    // also avoid left/right clipping (very conservative)
+    if (cx > 1 && r > (uint8_t)(cx - 1)) r = (uint8_t)(cx - 1);
+
+    // Draw outer circle
     ST7565_drawcircle(cx, cy, r, BLACK);
 
-    // Y-UP coordinate system:
-    // North is ABOVE center => larger y
-    ST7565_drawchar_anywhere(cx - 2,  cy + r + 2,  'N');  // top
-    ST7565_drawchar_anywhere(cx + r + 4, cy - 3,   'E');  // right
-    ST7565_drawchar_anywhere(cx - 2,  cy - r - 10, 'S');  // bottom
-    ST7565_drawchar_anywhere(cx - r - 10, cy - 3,  'W');  // left
+    // Cardinal letters (assumes your stated Y-UP convention)
+    ST7565_drawchar_anywhere(cx - 2,        cy + r + 1,  'N');  // above
+    ST7565_drawchar_anywhere(cx + r + 3,    cy - 3,      'E');  // right
+    ST7565_drawchar_anywhere(cx - 2,        cy - r - 9,  'S');  // below
+    ST7565_drawchar_anywhere(cx - r - 9,    cy - 3,      'W');  // left
 
-    float offset = 0.0f;
-    float angle = (heading_deg + offset) * (3.14159265f / 180.0f);
+    // Needle math (0° points North)
+    float angle = heading_deg * (3.14159265f / 180.0f);
 
-    // Keep 0° pointing to North:
-    float fx = cx + r * sinf(angle);
-    float fy = cy + r * cosf(angle);
+    float fx = (float)cx + (float)r * sinf(angle);
+    float fy = (float)cy + (float)r * cosf(angle);   // Y-UP as you wrote
 
     uint8_t x1 = (uint8_t)(fx + 0.5f);
     uint8_t y1 = (uint8_t)(fy + 0.5f);
 
     ST7565_drawline(cx, cy, x1, y1, BLACK, 2);
+
+    // --- Heading text below the compass ---
+    char degree_string[8];
+    ftoa(degree_string, heading_deg, 1);
+
+    char buff[16];
+    snprintf(buff, sizeof(buff), "%s%c", degree_string, (char)DEGREE_CHAR);
+
+    // Center the 7x12 text on the bottom row area.
+    // 7px/char approx; adjust if your font differs.
+    uint8_t text_w = (uint8_t)(strlen(buff) * 7);
+    uint8_t tx = (text_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - text_w) / 2) : 0;
+    uint8_t ty = (uint8_t)(LCD_HEIGHT - 12); // last 12px tall band
+
+    ST7565_drawstring_anywhere_7x12(tx, ty, buff);
 }
 
 // Convert float to string with fixed number of decimals
@@ -1119,8 +1143,8 @@ int main(void)
               {
 
                   // Center the horizontal field vector
-                  float mx_c = (mx - mx_off) / sx;
-                  float my_c = (my - my_off) / sy;
+                  float mx_c = (mx - mx_off);
+                  float my_c = (my - my_off);
 
                   // Heading (using your chosen convention atan2(my, -mx))
                   float heading_rad = atan2f(-my_c, mx_c);
