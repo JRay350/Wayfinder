@@ -31,6 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <math.h>
 #include "stm32l0xx.h"
 #include <stdio.h>
 #include <stdbool.h>
@@ -68,6 +69,7 @@ extern "C" {
 #define YEAR_MAX 2099u
 
 #define COMPASS_PERIOD_MS 50
+#define INCLINE_PERIOD_MS 50
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

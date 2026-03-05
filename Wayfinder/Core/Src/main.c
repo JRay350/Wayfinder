@@ -116,7 +116,7 @@ float_t mz_off = -168.55f;
 float_t sx = 73.05;
 float_t sy = 70.6;
 
-float_t temperature_offset = -3.60;
+float_t temperature_offset = 0.0;
 float_t magnetometer_offset = 0.0;
 float_t accelerometer_offset = 0.0;
 float_t pressure_offset = 0.0;
@@ -175,6 +175,7 @@ void DecrementTime(void);
 void AdjustOffset(float_t offset_delta);
 void NextCalibrationField(void);
 void Draw_Compass(float heading_deg);
+void Draw_Incline(float incline_deg);
 void ftoa(char* buf, float value, int decimals);
 float Calculate_Altitude(float pressure_hpa);
 float Celsius_To_Fahrenheit(float celsius_temperature);
@@ -891,6 +892,55 @@ void Draw_Compass(float heading_deg)
     ST7565_drawstring_anywhere_7x12(tx, ty, buff);
 }
 
+void Draw_Incline(float incline_deg)
+{
+    // --- Layout: indicator above, text below ---
+    const uint8_t text_h   = 14;
+    const uint8_t top_h    = (LCD_HEIGHT > text_h) ? (LCD_HEIGHT - text_h) : LCD_HEIGHT;
+
+    const uint8_t cx = (uint8_t)(LCD_WIDTH / 2);
+    const uint8_t cy = (uint8_t)(top_h / 2);
+
+    uint8_t r = 15;
+    if (cy > 1 && r > (uint8_t)(cy - 1)) r = (uint8_t)(cy - 1);
+    if (cx > 1 && r > (uint8_t)(cx - 1)) r = (uint8_t)(cx - 1);
+
+    // Draw reference circle (same as compass)
+    ST7565_drawcircle(cx, cy, r, BLACK);
+
+    // Draw horizontal reference line (0°)
+    ST7565_drawline(cx - r, cy, cx + r, cy, BLACK, 1);
+
+    // Clamp incline
+    if (incline_deg < 0.0f)  incline_deg = 0.0f;
+    if (incline_deg > 90.0f) incline_deg = 90.0f;
+
+    // Same math style as compass
+    float angle = incline_deg * (3.14159265f / 180.0f);
+
+    // 0° = horizontal, 90° = vertical up
+    float fx = (float)cx + (float)r * cosf(angle);
+    float fy = (float)cy + (float)r * sinf(angle);
+
+    uint8_t x1 = (uint8_t)(fx + 0.5f);
+    uint8_t y1 = (uint8_t)(fy + 0.5f);
+
+    ST7565_drawline(cx, cy, x1, y1, BLACK, 2);
+
+    // --- Incline text below ---
+    char degree_string[8];
+    ftoa(degree_string, incline_deg, 1);
+
+    char buff[16];
+    snprintf(buff, sizeof(buff), "%s%c", degree_string, (char)DEGREE_CHAR);
+
+    uint8_t text_w = (uint8_t)(strlen(buff) * 7);
+    uint8_t tx = (text_w < LCD_WIDTH) ? (uint8_t)((LCD_WIDTH - text_w) / 2) : 0;
+    uint8_t ty = (uint8_t)(LCD_HEIGHT - 12);
+
+    ST7565_drawstring_anywhere_7x12(tx, ty, buff);
+}
+
 // Convert float to string with fixed number of decimals
 // Example: ftoa(buf, 3.14159f, 3) → "3.142"
 void ftoa(char *buf, float value, int decimals)
@@ -1062,6 +1112,7 @@ int main(void)
       }
 
       static uint32_t next_compass_ms = 0;
+      static uint32_t next_incline_ms = 0;
 
       if (interface_state == COMPASS)
       {
@@ -1075,11 +1126,21 @@ int main(void)
               next_compass_ms += COMPASS_PERIOD_MS;
               ui_dirty = true;  // triggers COMPASS redraw at ~20 Hz
           }
+      } else if (interface_state == INCLINE) {
+    	    uint32_t now = HAL_GetTick();
+    	    if (next_incline_ms == 0) next_incline_ms = now;
+
+    	    if ((int32_t)(now - next_incline_ms) >= 0)
+    	    {
+    	        next_incline_ms += INCLINE_PERIOD_MS;
+    	        ui_dirty = true;
+    	    }
       }
       else if (interface_state != OFF)
       {
           // reset so when you re-enter COMPASS it updates immediately
           next_compass_ms = 0;
+          next_incline_ms = 0;
       }
 
       /* ---------- Draw only when dirty ---------- */
@@ -1230,7 +1291,9 @@ int main(void)
         	  memset(displayBuffer, 0, sizeof(displayBuffer));
 
         	  if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK) {
-
+        		  float incline_rad = fabsf(atan2f(ax, sqrtf(ay*ay + az*az)));
+        		  float incline_deg = fabsf(incline_rad * (180.0f / 3.14159265f)); // need to add offset still
+        		  Draw_Incline(incline_deg);
         	  } else {
                   const char *IMU_error = "IMU Failure";
                   ST7565_drawstring_anywhere(
@@ -1239,6 +1302,9 @@ int main(void)
                       (char*)IMU_error
                   );
               }
+
+        	  updateDisplay();
+        	  break;
           }
 
           default:
@@ -1707,6 +1773,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         } else if (interface_state == COMPASS) {
         	interface_state = INCLINE;
         	prev_state = COMPASS;
+        	ui_dirty = true;
         } else if (interface_state == TIME) {
             interface_state = TEMPERATURE;
             prev_state = TIME;
@@ -1723,6 +1790,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
             case COMPASS:      interface_state = TIME; break;
             case TEMPERATURE:  interface_state = TIME; break;
             case PRESSURE:     interface_state = TIME; break;
+            case INCLINE:
+            	interface_state = COMPASS;
+            	ui_dirty = true;
+            	break;
             case TIME:
                 interface_state = SET_TIME;
                 EnterSetTimeMode();
