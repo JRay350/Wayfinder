@@ -160,8 +160,9 @@ static bool is_leap_year(uint16_t year);
 static uint8_t days_in_month(uint8_t month, uint16_t year);
 static void clamp_day_to_month(DateTime_t *t);
 static void IMU_Init(void);
+static void Spark_Fill(float *hist, uint8_t *head, uint8_t *count, float v);
 static void Spark_Push(float *hist, uint8_t *head, uint8_t *count, float v);
-static void Spark_DrawLine(uint8_t x, uint8_t y, uint8_t w, uint8_t h, Interface_State_t state, const float *hist, uint8_t head, uint8_t count, uint8_t draw_box);
+static void Spark_DrawLine(uint8_t x, uint8_t y, uint8_t w, uint8_t h, Interface_State_t state, const float *hist,uint8_t head, uint8_t count, uint8_t draw_box,uint8_t xstep);
 void EnterSetTimeMode(void);
 void RTC_GetDateTime(DateTime_t *dt);
 HAL_StatusTypeDef RTC_CommitDateTime(const DateTime_t *dt);
@@ -216,6 +217,13 @@ static void IMU_Init(void) {
 	                        C6DOFIMU13_MAG_TEMP_MEAS_ON);
 }
 
+static void Spark_Fill(float *hist, uint8_t *head, uint8_t *count, float v)
+{
+    for (uint8_t i = 0; i < SPARK_W; i++) hist[i] = v;
+    *head = 0;
+    *count = SPARK_W;
+}
+
 static void Spark_Push(float *hist, uint8_t *head, uint8_t *count, float v)
 {
     hist[*head] = v;
@@ -223,11 +231,7 @@ static void Spark_Push(float *hist, uint8_t *head, uint8_t *count, float v)
     if (*count < SPARK_W) (*count)++;
 }
 
-static void Spark_DrawLine(
-    uint8_t x, uint8_t y, uint8_t w, uint8_t h, Interface_State_t state,
-    const float *hist, uint8_t head, uint8_t count,
-    uint8_t draw_box
-)
+static void Spark_DrawLine(uint8_t x, uint8_t y, uint8_t w, uint8_t h, Interface_State_t state, const float *hist, uint8_t head, uint8_t count, uint8_t draw_box,uint8_t xstep)
 {
     if (w == 0 || h == 0) return;
 
@@ -337,8 +341,23 @@ static void Spark_DrawLine(
     uint8_t prev_px = x;
     uint8_t prev_py = (uint8_t)(y + (h - 1));
 
+    if (xstep == 0) xstep = 1;
+
+    // How many points can fit so that the LAST point is at x+(w-1)
+    uint8_t max_points = (uint8_t)(((w - 1) / xstep) + 1);
+    if (max_points < 2) return;
+
     uint8_t n = count;
-    if (n > w) n = w;
+    if (n > max_points) n = max_points;
+    if (n < 2) return;
+
+    // compute start_x in signed math to avoid uint8 underflow
+    int16_t x_span = (int16_t)(n - 1) * (int16_t)xstep;     // 0..(w-1)
+    int16_t start_x_i16 = (int16_t)x + ((int16_t)(w - 1) - x_span);
+
+    // clamp just in case
+    if (start_x_i16 < (int16_t)x) start_x_i16 = (int16_t)x;
+    uint8_t start_x = (uint8_t)start_x_i16;
 
     for (uint8_t i = 0; i < n; i++) {
         uint8_t src_i = (uint8_t)(count - n + i);
@@ -353,8 +372,13 @@ static void Spark_DrawLine(
 
         int16_t yy = (int16_t)((float)y + t * (float)(h - 1));
 
-        uint8_t px = (uint8_t)(x + i);
+        uint8_t px = (uint8_t)(start_x + (uint8_t)(i * xstep));
         uint8_t py = (yy < y) ? y : (yy >= (y + h) ? (uint8_t)(y + h - 1) : (uint8_t)yy);
+
+        // Clamp px before drawing
+        if (px < x) px = x;
+        uint8_t right = (uint8_t)(x + w - 1);
+        if (px > right) px = right;
 
         if (i > 0) ST7565_drawline(prev_px, prev_py, px, py, BLACK, 1);
 
@@ -988,7 +1012,10 @@ int main(void)
 
   // LCD Init
   ST7565_init();
-  isDisplayOn = true;
+  ST7565_command(CMD_DISPLAY_OFF);
+  ST7565_clear();
+  updateDisplay();
+  isDisplayOn = false;
 
 
   /* USER CODE END 2 */
@@ -1083,7 +1110,14 @@ int main(void)
         	  float_t pressure;
 
         	  if (LPS22HH_PRESS_GetPressure(&lps22hh, &pressure) == LPS22HH_OK) {
-        	      Spark_Push(press_hist, &press_head, &press_count, pressure + pressure_offset);
+        		  float v = pressure + pressure_offset;
+
+        		  if (press_count == 0) {
+        		        // Prefill so the sparkline is immediately fully drawn (flat line)
+        		        Spark_Fill(press_hist, &press_head, &press_count, v);
+        		  }
+
+        		  Spark_Push(press_hist, &press_head, &press_count, v);
         	      char pressure_string[20];
         	      ftoa(pressure_string, pressure + pressure_offset, 2); // e.g. "1013.25"
 
@@ -1102,17 +1136,7 @@ int main(void)
                   pressure_display_string
               );
 
-              Spark_DrawLine(
-                  24,                     // x
-                  5,                     // y (below numeric readout)
-                  80,                     // width
-                  32,                     // height
-                  PRESSURE,               // state selects press_scale_min/max
-                  press_hist,
-                  press_head,
-                  press_count,
-                  1                       // draw box
-              );
+              Spark_DrawLine(24, 5, 121, 32, PRESSURE, press_hist, press_head, press_count, 1, 8);
 
               updateDisplay();
               break;
@@ -1130,7 +1154,14 @@ int main(void)
 
         	  if (STTS22H_TEMP_GetTemperature(&stts22h, &temperature) == STTS22H_OK) {
         		  temperature = Celsius_To_Fahrenheit(temperature);
-        	      Spark_Push(temp_hist, &temp_head, &temp_count, temperature + temperature_offset);
+        		  float v = temperature + temperature_offset;
+
+        		  if (temp_count == 0) {
+        			  // Prefill so the sparkline is immediately fully drawn (flat line)
+        			  Spark_Fill(temp_hist, &temp_head, &temp_count, v);
+        		  }
+
+        	      Spark_Push(temp_hist, &temp_head, &temp_count, v);
         	      char temperature_string[20];
         	      ftoa(temperature_string, temperature + temperature_offset, 2);   // e.g. "23.45"
 
@@ -1149,17 +1180,7 @@ int main(void)
                   temperature_display_string
               );
 
-              Spark_DrawLine(
-                  0,                     // x
-                  0,                     // y
-                  128,                     // width
-                  40,                     // height
-                  TEMPERATURE,               //
-                  temp_hist,
-                  temp_head,
-                  temp_count,
-                  1                       // draw box
-              );
+              Spark_DrawLine(0, 0, 121, 40, TEMPERATURE, temp_hist, temp_head, temp_count, 1, 8);
 
               updateDisplay();
               break;
