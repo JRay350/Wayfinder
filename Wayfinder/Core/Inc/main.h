@@ -55,6 +55,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
+#define BTN_DEBOUNCE_MS 25u
 #define VREFINT_CAL ((uint16_t*) (0x1FF80078UL))
 
 #define SPARK_W   128   // number of points (also pixels wide)

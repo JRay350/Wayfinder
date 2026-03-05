@@ -83,6 +83,11 @@ SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
 
 /* USER CODE BEGIN PV */
+static volatile uint32_t last_pa0_ms = 0;
+static volatile uint32_t last_pb9_ms = 0;
+static volatile uint32_t last_pb8_ms = 0;
+static volatile uint32_t last_pb3_ms = 0;
+
 C6DOFIMU13_HandleTypeDef h6dof;
 
 LPS22HH_Object_t lps22hh;
@@ -93,7 +98,7 @@ volatile bool rtc_tick_flag;
 volatile bool power_button_flag;
 
 Interface_State_t prev_state = SET_TIME;
-Interface_State_t interface_state = COMPASS;
+Interface_State_t interface_state = SET_TIME;
 
 volatile TimeEditField_t time_edit_field = EDIT_MONTH;
 DateTime_t edit_time;
@@ -1572,61 +1577,77 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc) {
 	rtc_tick_flag = true;
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-	if (GPIO_Pin == GPIO_PIN_0) { // PA0
-		if (interface_state == SET_TIME) {
-			RTC_CommitDateTime(&edit_time);
-			edit_time_dirty = false;
-			interface_state = TIME;
-			ui_dirty = true;
-		} else if (interface_state == CALIBRATION) {
-			interface_state = prev_state;
-		}
-		else power_button_flag = true;
-	} else if (GPIO_Pin == GPIO_PIN_9) { // PB9
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    uint32_t now = HAL_GetTick(); // SysTick ms tick (HAL provides this)
+
+    if (GPIO_Pin == GPIO_PIN_0) { // PA0
+        if ((uint32_t)(now - last_pa0_ms) < BTN_DEBOUNCE_MS) return;
+        last_pa0_ms = now;
+
+        // Optional: confirm it's actually still pressed (active-low)
+        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != GPIO_PIN_RESET) return;
+
+        if (interface_state == SET_TIME) {
+            RTC_CommitDateTime(&edit_time);
+            edit_time_dirty = false;
+            interface_state = TIME;
+            ui_dirty = true;
+        } else if (interface_state == CALIBRATION) {
+            interface_state = prev_state;
+        } else {
+            power_button_flag = true;
+        }
+    }
+    else if (GPIO_Pin == GPIO_PIN_9) { // PB9
+        if ((uint32_t)(now - last_pb9_ms) < BTN_DEBOUNCE_MS) return;
+        last_pb9_ms = now;
+
+        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9) != GPIO_PIN_RESET) return;
+
         if (interface_state == SET_TIME) {
             IncrementTime();
         } else if (interface_state == COMPASS) {
-			interface_state = CALIBRATION;
-			prev_state = COMPASS;
-		} else if (interface_state == CALIBRATION) {
-			AdjustOffset(0.1);
-		} else {
-			interface_state = COMPASS;
-		}
-	} else if (GPIO_Pin == GPIO_PIN_8) { // PB8
-		if (interface_state == SET_TIME) {
-			DecrementTime();
-		} else if (interface_state == CALIBRATION) {
-			AdjustOffset(-0.1);
-		}
-		else if (interface_state == TEMPERATURE) {
-			interface_state = CALIBRATION;
-			prev_state = TEMPERATURE;
-		} else {
-			interface_state = TEMPERATURE;
-		}
-	} else if (GPIO_Pin == GPIO_PIN_3) { // PB3
-		switch (interface_state) {
-			case SET_TIME:
-				NextTimeField();
-				break;
-			case COMPASS:
-				interface_state = TIME;
-				break;
-			case PRESSURE:
-				interface_state = TIME;
-				break;
-			case TIME:
-				interface_state = SET_TIME;
-				break;
-			case CALIBRATION:
-				NextCalibrationField();
-				break;
-			default:
-				break;
-		}
-	}
+            interface_state = CALIBRATION;
+            prev_state = COMPASS;
+        } else if (interface_state == CALIBRATION) {
+            AdjustOffset(0.1);
+        } else {
+            interface_state = COMPASS;
+        }
+    }
+    else if (GPIO_Pin == GPIO_PIN_8) { // PB8
+        if ((uint32_t)(now - last_pb8_ms) < BTN_DEBOUNCE_MS) return;
+        last_pb8_ms = now;
+
+        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_8) != GPIO_PIN_RESET) return;
+
+        if (interface_state == SET_TIME) {
+            DecrementTime();
+        } else if (interface_state == CALIBRATION) {
+            AdjustOffset(-0.1);
+        } else if (interface_state == TEMPERATURE) {
+            interface_state = CALIBRATION;
+            prev_state = TEMPERATURE;
+        } else {
+            interface_state = TEMPERATURE;
+        }
+    }
+    else if (GPIO_Pin == GPIO_PIN_3) { // PB3
+        if ((uint32_t)(now - last_pb3_ms) < BTN_DEBOUNCE_MS) return;
+        last_pb3_ms = now;
+
+        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3) != GPIO_PIN_RESET) return;
+
+        switch (interface_state) {
+            case SET_TIME:     NextTimeField(); break;
+            case COMPASS:      interface_state = TIME; break;
+            case PRESSURE:     interface_state = TIME; break;
+            case TIME:         interface_state = SET_TIME; break;
+            case CALIBRATION:  NextCalibrationField(); break;
+            default: break;
+        }
+    }
 }
 
 /* USER CODE END 4 */
