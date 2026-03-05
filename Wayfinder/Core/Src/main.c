@@ -1129,14 +1129,13 @@ int main(void)
         	  }
 
               memset(displayBuffer, 0, sizeof(displayBuffer));
-
               ST7565_drawstring_anywhere_7x12(
-                  (LCD_WIDTH / 2) - ((strlen(pressure_display_string) / 2) * 6),
-                  27,
+                  (LCD_WIDTH - strlen(pressure_display_string) * 7) / 2,
+                  LCD_HEIGHT - 16,
                   pressure_display_string
               );
 
-              Spark_DrawLine(24, 5, 121, 32, PRESSURE, press_hist, press_head, press_count, 1, 8);
+              Spark_DrawLine(0, 0, 121, 40, PRESSURE, press_hist, press_head, press_count, 1, 8);
 
               updateDisplay();
               break;
@@ -1666,8 +1665,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
             prev_state = COMPASS;
         } else if (interface_state == CALIBRATION) {
             AdjustOffset(0.1);
-        } else {
+        } else if (interface_state == TEMPERATURE) {
+        	interface_state = PRESSURE;
+        	prev_state = TEMPERATURE;
+        } else if (interface_state == TIME) {
             interface_state = COMPASS;
+
         }
     }
     else if (GPIO_Pin == GPIO_PIN_8) { // PB8
@@ -1683,8 +1686,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         } else if (interface_state == TEMPERATURE) {
             interface_state = CALIBRATION;
             prev_state = TEMPERATURE;
-        } else {
+        } else if (interface_state == COMPASS) {
+        	interface_state = INCLINE;
+        	prev_state = COMPASS;
+        } else if (interface_state == TIME) {
             interface_state = TEMPERATURE;
+            prev_state = TIME;
         }
     }
     else if (GPIO_Pin == GPIO_PIN_3) { // PB3
