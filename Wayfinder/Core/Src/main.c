@@ -36,6 +36,7 @@ typedef struct {
 } DateTime_t;
 
 typedef enum {
+	OFF,
 	SET_TIME,
 	CALIBRATION,
 	TIME,
@@ -98,7 +99,7 @@ volatile bool rtc_tick_flag;
 volatile bool power_button_flag;
 
 Interface_State_t prev_state = SET_TIME;
-Interface_State_t interface_state = SET_TIME;
+Interface_State_t interface_state = OFF;
 
 volatile TimeEditField_t time_edit_field = EDIT_MONTH;
 DateTime_t edit_time;
@@ -362,10 +363,11 @@ static void Spark_DrawLine(
     }
 }
 
-void EnterSetTimeMode(void) {
-	RTC_GetDateTime((DateTime_t *)&edit_time);
-	time_edit_field = EDIT_MONTH;
-	edit_time_dirty = false;
+void EnterSetTimeMode(void)
+{
+    RTC_GetDateTime(&edit_time);   // load current RTC time
+    time_edit_field = EDIT_MONTH;
+    ui_dirty = true;
 }
 
 void RTC_GetDateTime(DateTime_t *dt) {
@@ -394,7 +396,12 @@ HAL_StatusTypeDef RTC_CommitDateTime(const DateTime_t *dt) {
     time.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
     time.StoreOperation = RTC_STOREOPERATION_RESET;
 
-    date.Year  = (uint8_t)(dt->year - 2000u);  // HAL expects 0..99
+    uint16_t year = dt->year;
+
+    if (year < YEAR_MIN) year = YEAR_MIN;
+    if (year > YEAR_MAX) year = YEAR_MAX;
+
+    date.Year = (uint8_t)(year - YEAR_MIN);
     date.Month = dt->month;
     date.Date  = dt->day;
     date.WeekDay = RTC_WEEKDAY_SUNDAY; // Placeholder
@@ -705,15 +712,21 @@ void IncrementTime(void) {
     switch (time_edit_field) {
 
     case EDIT_MONTH:
-        edit_time.month = (edit_time.month >= 12) ? 1 : (edit_time.month + 1);
-        clamp_day_to_month((DateTime_t *)&edit_time);
+        edit_time.month++;
+        if (edit_time.month > 12)
+            edit_time.month = 1;
+
+        clamp_day_to_month(&edit_time);
         break;
 
-    case EDIT_DAY: {
+    case EDIT_DAY:
+    {
         uint8_t maxd = days_in_month(edit_time.month, edit_time.year);
-        edit_time.day = (edit_time.day >= maxd) ? 1 : (edit_time.day + 1);
-        break;
+        edit_time.day++;
+        if (edit_time.day > maxd)
+            edit_time.day = 1;
     }
+    break;
 
     case EDIT_YEAR:
         edit_time.year = (edit_time.year >= YEAR_MAX) ? YEAR_MIN : (edit_time.year + 1);
@@ -739,10 +752,14 @@ void IncrementTime(void) {
 void DecrementTime(void) {
 	switch (time_edit_field) {
 
-    case EDIT_MONTH:
-        edit_time.month = (edit_time.month <= 1) ? 12 : (edit_time.month - 1);
-        clamp_day_to_month((DateTime_t *)&edit_time);
-        break;
+	case EDIT_MONTH:
+	    if (edit_time.month <= 1)
+	        edit_time.month = 12;
+	    else
+	        edit_time.month--;
+
+	    clamp_day_to_month(&edit_time);
+	    break;
 
     case EDIT_DAY: {
         uint8_t maxd = days_in_month(edit_time.month, edit_time.year);
@@ -981,16 +998,26 @@ int main(void)
   while (1)
   {
       /* ---------- Power button handling ---------- */
-      if (power_button_flag) {
-          power_button_flag = 0;
+	  if (power_button_flag) {
+	      power_button_flag = 0;
 
-          uint8_t status = isDisplayOn ? ST7565_off() : ST7565_on();
-          if (status == HAL_OK) {
-              isDisplayOn = !isDisplayOn;
-          }
+	      if (interface_state == OFF) {
+	          // Turn display on and go to a real screen
+	    	  ST7565_on();
+	    	  isDisplayOn = true;
 
-          ui_dirty = true;  // refresh screen after display toggle
-      }
+	          interface_state = TIME;
+	          ui_dirty = true;
+	      } else {
+	          // Turn display off and enter OFF state
+	    	  ST7565_off();
+	    	  isDisplayOn = false;
+
+	          prev_state = interface_state;  // remember where we were
+	          interface_state = OFF;
+	          ui_dirty = false;              // no need to redraw while off
+	      }
+	  }
 
       /* ---------- 1 Hz tick handling (NO drawing here) ---------- */
       if (rtc_tick_flag) {
@@ -1022,7 +1049,7 @@ int main(void)
               ui_dirty = true;  // triggers COMPASS redraw at ~20 Hz
           }
       }
-      else
+      else if (interface_state != OFF)
       {
           // reset so when you re-enter COMPASS it updates immediately
           next_compass_ms = 0;
@@ -1581,6 +1608,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     uint32_t now = HAL_GetTick(); // SysTick ms tick (HAL provides this)
 
+    // If we're OFF, ignore everything except the power button (PA0)
+    if (interface_state == OFF && GPIO_Pin != GPIO_PIN_0) {
+        return;
+    }
+
     if (GPIO_Pin == GPIO_PIN_0) { // PA0
         if ((uint32_t)(now - last_pa0_ms) < BTN_DEBOUNCE_MS) return;
         last_pa0_ms = now;
@@ -1595,6 +1627,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
             ui_dirty = true;
         } else if (interface_state == CALIBRATION) {
             interface_state = prev_state;
+            ui_dirty = true;
         } else {
             power_button_flag = true;
         }
@@ -1642,8 +1675,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         switch (interface_state) {
             case SET_TIME:     NextTimeField(); break;
             case COMPASS:      interface_state = TIME; break;
+            case TEMPERATURE:  interface_state = TIME; break;
             case PRESSURE:     interface_state = TIME; break;
-            case TIME:         interface_state = SET_TIME; break;
+            case TIME:
+                interface_state = SET_TIME;
+                EnterSetTimeMode();
+                ui_dirty = true;
+                break;
             case CALIBRATION:  NextCalibrationField(); break;
             default: break;
         }
