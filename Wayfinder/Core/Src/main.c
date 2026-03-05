@@ -1135,7 +1135,7 @@ int main(void)
                   pressure_display_string
               );
 
-              Spark_DrawLine(0, 0, 121, 40, PRESSURE, press_hist, press_head, press_count, 1, 8);
+              Spark_DrawLine(0, 0, SPARK_W, SPARK_H, PRESSURE, press_hist, press_head, press_count, 1, 8);
 
               updateDisplay();
               break;
@@ -1179,7 +1179,7 @@ int main(void)
                   temperature_display_string
               );
 
-              Spark_DrawLine(0, 0, 121, 40, TEMPERATURE, temp_hist, temp_head, temp_count, 1, 8);
+              Spark_DrawLine(0, 0, SPARK_W, SPARK_H, TEMPERATURE, temp_hist, temp_head, temp_count, 1, 8);
 
               updateDisplay();
               break;
@@ -1223,6 +1223,24 @@ int main(void)
               updateDisplay();
               break;
           }
+
+          case INCLINE: {
+        	  float ax, ay, az;
+
+        	  memset(displayBuffer, 0, sizeof(displayBuffer));
+
+        	  if (C6DOFIMU13_Accel_GetXYZ(&h6dof, &ax, &ay, &az) == HAL_OK) {
+
+        	  } else {
+                  const char *IMU_error = "IMU Failure";
+                  ST7565_drawstring_anywhere(
+                      (LCD_WIDTH / 2) - ((strlen(IMU_error) / 2) * 6),
+                      27,
+                      (char*)IMU_error
+                  );
+              }
+          }
+
           default:
               break;
           }
